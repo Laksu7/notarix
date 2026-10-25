@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Notarization Records — NOTARIX</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<button id="menuBtn" aria-label="Open menu"></button>
+<aside id="sidebar" class="sidebar"></aside>
+<div id="scrim" class="scrim"></div>
+
+<main class="main">
+  <header class="topbar" id="topbar"></header>
+
+  <div class="page-outer">
+    <header class="page-head">
+      <h1>Notarization Records</h1>
+      <p>All notarized documents recorded by the office, kept organized and traceable.</p>
+    </header>
+
+    <div class="row" style="align-items:flex-start;margin:0 0 16px;">
+      <div class="toolbar">
+        <div class="search-box">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          <input class="input" id="quickSearch" placeholder="Search document number, client name, or type…">
+        </div>
+        <div style="position:relative;">
+          <button class="btn btn-outline" id="filterBtn">Filter</button>
+          <div id="filterPanel" style="display:none;position:absolute;z-index:20;top:calc(100% + 6px);left:0;background:#fff;border:1px solid var(--line);border-radius:var(--r-md);box-shadow:var(--shadow-pop);padding:16px;width:280px;">
+            <div class="field"><label>Document Type</label><select class="input" id="fType"></select></div>
+            <div class="field"><label>Status</label><select class="input" id="fStatus"></select></div>
+            <div class="field" style="margin-bottom:8px;"><label>Date From</label><input type="date" class="input" id="fFrom"></div>
+            <div class="field" style="margin-bottom:8px;"><label>Date To</label><input type="date" class="input" id="fTo"></div>
+            <div style="display:flex;gap:8px;"><button class="btn btn-primary btn-sm" id="fApply" style="flex:1;">Apply</button>
+            <button class="btn btn-outline btn-sm" id="fClear" style="flex:1;">Clear</button></div>
+          </div>
+        </div>
+        <a class="btn btn-outline" href="status.html" id="trackBtn">Track Status &amp; Location</a>
+      </div>
+      <a class="btn btn-primary" href="add-record.html" id="addBtn">Add Record</a>
+    </div>
+
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Document No.</th><th>Type</th><th>Client Name</th>
+            <th>Date Notarized</th><th>Status</th><th>Location</th><th style="width:106px;">Actions</th>
+          </tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <span class="page-info" id="pageInfo"></span>
+        <div class="pages" id="pageBtns"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- View modal -->
+<div class="modal-overlay" id="viewModal">
+  <div class="modal">
+    <div class="row" style="justify-content:space-between;margin-bottom:4px;">
+      <h3 style="margin-bottom:0;">Record Details</h3>
+      <button class="icon-btn" onclick="closeModal('viewModal')" aria-label="Close"></button>
+    </div>
+    <div id="viewBody"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<script src="js/app.js"></script>
+<script>
+initShell();
+document.getElementById('filterBtn').insertAdjacentHTML('afterbegin', ICONS.filter);
+document.getElementById('trackBtn').insertAdjacentHTML('afterbegin', ICONS.out);
+document.getElementById('addBtn').insertAdjacentHTML('afterbegin', ICONS.plus);
+
+const tbody = document.getElementById('tbody');
+let page = 1, search = '', type = '', status = '', from = '', to = '';
+const LIMIT = 10;
+
+async function loadTypes() {
+  try {
+    const types = await api('/api/doc-types');
+    document.getElementById('fType').innerHTML = `<option value="">All Types</option>` + types.map(t => `<option value="${esc(t.name)}">${esc(t.name)}</option>`).join('');
+  } catch {}
+}
+document.getElementById('fStatus').innerHTML = `<option value="">All Status</option>` + STATUSES.map(s => `<option>${s}</option>`).join('');
+const filterPanel = document.getElementById('filterPanel');
+document.getElementById('filterBtn').addEventListener('click', () => {
+  filterPanel.style.display = filterPanel.style.display === 'none' ? 'block' : 'none';
+});
+document.addEventListener('click', e => {
+  if (!filterPanel.contains(e.target) && e.target !== document.getElementById('filterBtn')
+      && !document.getElementById('filterBtn').contains(e.target)) filterPanel.style.display = 'none';
+});
+document.getElementById('fApply').addEventListener('click', () => {
+  type = document.getElementById('fType').value;
+  status = document.getElementById('fStatus').value;
+  from = document.getElementById('fFrom').value;
+  to = document.getElementById('fTo').value;
+  filterPanel.style.display = 'none';
+  page = 1; load();
+});
+document.getElementById('fClear').addEventListener('click', () => {
+  ['fType','fStatus','fFrom','fTo'].forEach(id => document.getElementById(id).value = '');
+  type = status = from = to = ''; page = 1; load();
+});
+let searchTimer;
+document.getElementById('quickSearch').addEventListener('input', e => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => { search = e.target.value.trim(); page = 1; load(); }, 300);
+});
+
+async function load() {
+  tbody.innerHTML = skeletonRows(7);
+  let data;
+  try {
+    data = await api(`/api/records?search=${encodeURIComponent(search)}&type=${encodeURIComponent(type)}&status=${encodeURIComponent(status)}&from=${from}&to=${to}&page=${page}&limit=${LIMIT}`);
+  } catch (err) {
+    tbody.innerHTML = stateRow('Could not load records', '<div style="margin-bottom:6px;">⚠️</div>');
+    document.getElementById('pageInfo').textContent = '';
+    document.getElementById('pageBtns').innerHTML = '';
+    return;
+  }
+  tbody.innerHTML = data.rows.length ? data.rows.map(r => `
+    <tr>
+      <td><span class="doc-no">${esc(r.doc_number)}</span></td>
+      <td>${esc(r.doc_type)}</td>
+      <td>${esc(r.client_name)}</td>
+      <td>${fmtDate(r.date_notarized)}</td>
+      <td><span class="badge ${badgeClass(r.status)}">${esc(r.status)}</span></td>
+      <td><span class="loc">${esc(r.location || r.status)}</span></td>
+      <td><div class="actions">
+        <button class="icon-btn" title="View" onclick="viewRecord(${r.id})">${ICONS.view}</button>
+        <a class="icon-btn" title="Edit" href="add-record.html?id=${r.id}">${ICONS.edit}</a>
+        <button class="icon-btn danger" title="Delete" onclick="delRecord(${r.id}, '${esc(r.doc_number)}')">${ICONS.trash}</button>
+      </div></td>
+    </tr>`).join('')
+    : stateRow('No records found', ICONS.inbox.replace('viewBox', 'width="30" height="30" viewBox'));
+
+  const fromN = data.total === 0 ? 0 : (data.page - 1) * LIMIT + 1;
+  const toN = Math.min(data.page * LIMIT, data.total);
+  document.getElementById('pageInfo').textContent = `Showing ${fromN}–${toN} of ${data.total.toLocaleString()} records`;
+
+  let btns = `<button class="arrow" ${data.page <= 1 ? 'disabled' : ''} data-page="${data.page - 1}">‹</button>`;
+  const start = Math.max(1, data.page - 2), end = Math.min(data.pages, start + 4);
+  const s = Math.max(1, Math.min(start, end - 4));
+  for (let i = s; i <= end; i++) btns += `<button ${i === data.page ? 'class="cur"' : ''} data-page="${i}">${i}</button>`;
+  if (data.pages > end) btns += `<button class="arrow" disabled>…</button><button data-page="${data.pages}">${data.pages}</button>`;
+  btns += `<button class="arrow" ${data.page >= data.pages ? 'disabled' : ''} data-page="${data.page + 1}">›</button>`;
+  const btnDiv = document.getElementById('pageBtns');
+  btnDiv.innerHTML = btns;
+  btnDiv.querySelectorAll('button:not([disabled])').forEach(b => b.addEventListener('click', () => {
+    page = +b.dataset.page; load(); window.scrollTo({ top: 0, behavior: 'smooth' });
+  }));
+}
+loadTypes().then(load);
+
+async function viewRecord(id) {
+  const r = await api('/api/records/' + id);
+  document.getElementById('viewBody').innerHTML = `
+    <div class="dl-grid" style="margin-top:10px;">
+      <div><div class="dl-label">Document Number</div><div class="dl-value">${esc(r.doc_number)}</div></div>
+      <div><div class="dl-label">Document Type</div><div class="dl-value">${esc(r.doc_type)}</div></div>
+      <div><div class="dl-label">Client Name</div><div class="dl-value">${esc(r.client_name)}</div></div>
+      <div><div class="dl-label">Date Notarized</div><div class="dl-value">${fmtDate(r.date_notarized)}</div></div>
+      <div><div class="dl-label">Status</div><div class="dl-value"><span class="badge ${badgeClass(r.status)}">${esc(r.status)}</span></div></div>
+      <div><div class="dl-label">Location</div><div class="dl-value">${esc(r.location || r.status)}</div></div>
+      <div style="grid-column:1/-1;"><div class="dl-label">Remarks</div><div class="dl-value">${esc(r.remarks) || '—'}</div></div>
+      <div style="grid-column:1/-1;"><div class="dl-label">Attached Document</div>
+        <div class="dl-value">${r.file_name
+          ? `<a href="${r.file_path}" target="_blank" style="color:var(--green-700);font-weight:600;">${esc(r.file_name)}</a>&nbsp;<span style="color:var(--muted);font-weight:400;">(${fmtSize(r.file_size)})</span>`
+          : '<span style="color:var(--muted);font-weight:400;">No file attached</span>'}</div></div>
+      <div style="grid-column:1/-1;color:var(--muted);font-weight:400;font-size:12px;">Last updated ${fmtDate(r.updated_at)}</div>
+    </div>`;
+  document.querySelector('#viewModal .icon-btn').innerHTML = ICONS.x;
+  document.getElementById('viewModal').classList.add('open');
+}
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.getElementById('viewModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('viewModal'); });
+
+async function delRecord(id, docno) {
+  const ok = await confirmAction({
+    title: 'Delete this record?',
+    message: `Record ${docno} will be permanently removed from the notarization records. This cannot be undone.`,
+    confirmText: 'Delete record', danger: true
+  });
+  if (!ok) return;
+  try {
+    await api('/api/records/' + id, { method: 'DELETE' });
+    toast(`Record ${docno} deleted`);
+    load();
+  } catch (err) { toast(err.message, true); }
+}
+</script>
+</body>
+</html>

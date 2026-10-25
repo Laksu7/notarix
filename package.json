@@ -1,0 +1,16 @@
+{
+  "name": "notarium",
+  "version": "1.0.0",
+  "description": "NOTARIUM - Notarization Record Management System",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.19.2",
+    "express-session": "^1.18.0",
+    "multer": "^1.4.5-lts.1",
+    "nodemailer": "^10.2.1"
+  }
+}

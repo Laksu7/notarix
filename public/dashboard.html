@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — NOTARIX</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<button id="menuBtn" aria-label="Open menu"></button>
+<aside id="sidebar" class="sidebar"></aside>
+<div id="scrim" class="scrim"></div>
+
+<main class="main">
+  <header class="topbar" id="topbar"></header>
+
+  <div class="page-outer">
+    <div class="dash-cols" style="margin-top:0;">
+      <div class="main-col">
+        <header class="page-head" style="padding-bottom:18px;">
+          <h1 id="greeting">Dashboard</h1>
+          <p>Here's your notarization record overview.</p>
+        </header>
+
+        <div class="stat-grid">
+          <div class="stat lead">
+            <span>Total Records</span>
+            <b id="stTotal" class="num">···</b>
+            <em class="delta" id="stDelta" style="display:none;"></em>
+          </div>
+          <div class="stat">
+            <span>This Month</span>
+            <b id="stMonth" class="num">···</b>
+            <em id="stMonthLabel">···</em>
+          </div>
+          <div class="stat">
+            <span>For Submission</span>
+            <b id="stForSub" class="num">···</b>
+            <em>Pending submission</em>
+          </div>
+          <div class="stat">
+            <span>Submitted</span>
+            <b id="stSubmitted" class="num">···</b>
+            <em>To central records</em>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="card-title">Recent Notarization Records</div>
+            <a class="btn btn-primary btn-sm" href="add-record.html" id="newBtn">New Notarization Record</a>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th>Document No.</th><th>Type</th><th>Client Name</th>
+                <th>Date Notarized</th><th>Status</th><th>Location</th><th style="width:106px;">Actions</th>
+              </tr></thead>
+              <tbody id="tbody"></tbody>
+            </table>
+          </div>
+          <div class="pagination">
+            <span class="page-info" id="pageInfo"></span>
+            <div class="pages" id="pageBtns"></div>
+          </div>
+        </div>
+      </div>
+
+      <aside class="rail">
+        <div class="card">
+          <div class="card-title">Quick Search &amp; Filters</div>
+          <div class="rail-label">Search</div>
+          <div class="search-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            <input class="input" id="qsQuery" placeholder="Search document no., client, or keyword">
+          </div>
+          <div class="rail-label">Document Type</div>
+          <select class="input" id="qsType"><option value="">All document types</option></select>
+          <div class="rail-label">Status</div>
+          <select class="input" id="qsStatus"><option value="">All statuses</option></select>
+          <div class="rail-label">Date Range</div>
+          <div class="range-row">
+            <input class="input" type="date" id="qsFrom" title="Start date">
+            <input class="input" type="date" id="qsTo" title="End date">
+          </div>
+          <div class="qs-actions">
+            <button class="btn btn-primary" id="qsGo">Search</button>
+            <button class="btn btn-outline" id="qsClear">Clear</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><span id="tmTitle">This Month</span><small id="tmSub"></small></div>
+          <table class="month-table" id="tmTable"><tbody></tbody></table>
+        </div>
+
+        <div class="promo">
+          <span class="pen-art" data-ic-x="pen"></span>
+          <h4>Organized Records<br>for a Smoother<br>Legal Process.</h4>
+          <div class="rule"></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</main>
+
+<!-- View modal -->
+<div class="modal-overlay" id="viewModal">
+  <div class="modal">
+    <div class="row" style="justify-content:space-between;margin-bottom:4px;">
+      <h3 style="margin-bottom:0;">Record Details</h3>
+      <button class="icon-btn" onclick="closeModal('viewModal')" aria-label="Close"></button>
+    </div>
+    <div id="viewBody"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<script src="js/app.js"></script>
+<script>
+initShell().then(user => {
+  if (user) document.getElementById('greeting').textContent = `${timeGreeting()}, ${user.name}!`;
+});
+
+/* decorative-slot icon fills */
+document.querySelectorAll('[data-ic-x]').forEach(el => el.innerHTML = ICONS[el.getAttribute('data-ic-x')]);
+document.getElementById('newBtn').insertAdjacentHTML('afterbegin', ICONS.plus);
+
+/* ---------- Stats ---------- */
+const monthNow = new Date();
+const prevMonthName = monthNow.getMonth() === 0 ? 'December' : MONTHS_FULL[monthNow.getMonth() - 1];
+const period = `${MONTHS_FULL[monthNow.getMonth()]} ${monthNow.getFullYear()}`;
+document.getElementById('stMonthLabel').textContent = period;
+document.getElementById('tmSub').textContent = period;
+
+(async () => {
+  try {
+    const s = await api('/api/stats');
+    document.getElementById('stTotal').textContent = s.total.toLocaleString();
+    document.getElementById('stMonth').textContent = s.thisMonth.toLocaleString();
+    document.getElementById('stForSub').textContent = s.forSubmission.toLocaleString();
+    document.getElementById('stSubmitted').textContent = s.submitted.toLocaleString();
+
+    const delta = s.thisMonth - s.lastMonth;
+    const dEl = document.getElementById('stDelta');
+    dEl.style.display = 'inline-flex';
+    if (delta > 0) dEl.innerHTML = `${ICONS.arrowUp}+${delta} from ${prevMonthName}`;
+    else if (delta < 0) dEl.textContent = `${Math.abs(delta)} fewer than ${prevMonthName}`;
+    else dEl.textContent = `No change from ${prevMonthName}`;
+
+    const tbody = document.querySelector('#tmTable tbody');
+    if (!s.typeSummary.length) {
+      tbody.innerHTML = `<tr><td style="color:var(--muted);">No notarization records yet this month.</td></tr>`;
+    } else {
+      const shown = s.typeSummary.slice(0, 5);
+      const rest = s.typeSummary.slice(5).reduce((a, r) => a + r.c, 0);
+      const rows = shown.map(r =>
+        `<tr><td>${esc(r.name)}</td><td>${r.c.toLocaleString()}</td></tr>`).join('');
+      const totalRow = `<tr class="total-row"><td>Total</td><td>${s.thisMonth.toLocaleString()}</td></tr>`;
+      tbody.innerHTML = rows + (rest > 0 ? `<tr><td>Other</td><td>${rest.toLocaleString()}</td></tr>` : '') + totalRow;
+    }
+  } catch (err) { /* initShell already redirected on 401 */ }
+})();
+
+/* ---------- Quick search & filters (opens the search page) ---------- */
+api('/api/doc-types').then(types => {
+  document.getElementById('qsType').innerHTML = `<option value="">All document types</option>` +
+    types.map(t => `<option value="${esc(t.name)}">${esc(t.name)}</option>`).join('');
+}).catch(() => {});
+document.getElementById('qsStatus').innerHTML = `<option value="">All statuses</option>` + STATUSES.map(s => `<option>${s}</option>`).join('');
+
+function quickSearch() {
+  const q = document.getElementById('qsQuery').value.trim();
+  const type = document.getElementById('qsType').value;
+  const status = document.getElementById('qsStatus').value;
+  const from = document.getElementById('qsFrom').value;
+  const to = document.getElementById('qsTo').value;
+  const p = new URLSearchParams();
+  if (q) p.set('q', q);
+  if (type) p.set('type', type);
+  if (status) p.set('status', status);
+  if (from) p.set('from', from);
+  if (to) p.set('to', from === to ? '' : to);
+  location.href = 'search.html' + (p.toString() ? '?' + p.toString() : '');
+}
+document.getElementById('qsGo').addEventListener('click', quickSearch);
+document.getElementById('qsClear').addEventListener('click', () => {
+  document.getElementById('qsQuery').value = '';
+  document.getElementById('qsType').selectedIndex = 0;
+  document.getElementById('qsStatus').selectedIndex = 0;
+  document.getElementById('qsFrom').value = '';
+  document.getElementById('qsTo').value = '';
+});
+document.getElementById('qsQuery').addEventListener('keydown', e => { if (e.key === 'Enter') quickSearch(); });
+
+/* ---------- Recent table (paginated) ---------- */
+const tbody = document.getElementById('tbody');
+let page = 1;
+const LIMIT = 8;
+
+async function load() {
+  tbody.innerHTML = skeletonRows(7);
+  let data;
+  try {
+    data = await api(`/api/records?page=${page}&limit=${LIMIT}`);
+  } catch (err) {
+    tbody.innerHTML = stateRow('Could not load records',
+      '<div style="margin-bottom:6px;">⚠️</div>');
+    document.getElementById('pageInfo').textContent = '';
+    document.getElementById('pageBtns').innerHTML = '';
+    return;
+  }
+
+  tbody.innerHTML = data.rows.length ? data.rows.map(r => `
+    <tr>
+      <td><span class="doc-no">${esc(r.doc_number)}</span></td>
+      <td>${esc(r.doc_type)}</td>
+      <td>${esc(r.client_name)}</td>
+      <td>${fmtDate(r.date_notarized)}</td>
+      <td><span class="badge ${badgeClass(r.status)}">${esc(r.status)}</span></td>
+      <td><span class="loc">${esc(r.location || r.status)}</span></td>
+      <td><div class="actions">
+        <button class="icon-btn" title="View" onclick="viewRecord(${r.id})">${ICONS.view}</button>
+        <a class="icon-btn" title="Edit" href="add-record.html?id=${r.id}">${ICONS.edit}</a>
+        <button class="icon-btn danger" title="Delete" onclick="delRecord(${r.id}, '${esc(r.doc_number)}')">${ICONS.trash}</button>
+      </div></td>
+    </tr>`).join('')
+    : stateRow('No notarization records yet', ICONS.inbox.replace('viewBox', 'width="30" height="30" viewBox'));
+
+  const from = data.total === 0 ? 0 : (data.page - 1) * LIMIT + 1;
+  const to = Math.min(data.page * LIMIT, data.total);
+  document.getElementById('pageInfo').textContent = `Showing ${from}–${to} of ${data.total.toLocaleString()} records`;
+
+  let btns = `<button class="arrow" ${data.page <= 1 ? 'disabled' : ''} data-page="${data.page - 1}">‹</button>`;
+  const start = Math.max(1, data.page - 2), end = Math.min(data.pages, start + 4);
+  const s = Math.max(1, Math.min(start, end - 4));
+  for (let i = s; i <= end; i++) btns += `<button ${i === data.page ? 'class="cur"' : ''} data-page="${i}">${i}</button>`;
+  if (data.pages > end) btns += `<button class="arrow" disabled>…</button><button data-page="${data.pages}">${data.pages}</button>`;
+  btns += `<button class="arrow" ${data.page >= data.pages ? 'disabled' : ''} data-page="${data.page + 1}">›</button>`;
+  const btnDiv = document.getElementById('pageBtns');
+  btnDiv.innerHTML = btns;
+  btnDiv.querySelectorAll('button:not([disabled])').forEach(b => b.addEventListener('click', () => {
+    page = +b.dataset.page; load(); window.scrollTo({ top: 0, behavior: 'smooth' });
+  }));
+}
+load();
+
+/* ---------- View modal ---------- */
+async function viewRecord(id) {
+  const r = await api('/api/records/' + id);
+  document.getElementById('viewBody').innerHTML = `
+    <div class="dl-grid" style="margin-top:10px;">
+      <div><div class="dl-label">Document Number</div><div class="dl-value">${esc(r.doc_number)}</div></div>
+      <div><div class="dl-label">Document Type</div><div class="dl-value">${esc(r.doc_type)}</div></div>
+      <div><div class="dl-label">Client Name</div><div class="dl-value">${esc(r.client_name)}</div></div>
+      <div><div class="dl-label">Date Notarized</div><div class="dl-value">${fmtDate(r.date_notarized)}</div></div>
+      <div><div class="dl-label">Status</div><div class="dl-value"><span class="badge ${badgeClass(r.status)}">${esc(r.status)}</span></div></div>
+      <div><div class="dl-label">Location</div><div class="dl-value">${esc(r.location || r.status)}</div></div>
+      <div style="grid-column:1/-1;"><div class="dl-label">Remarks</div><div class="dl-value">${esc(r.remarks) || '—'}</div></div>
+      <div style="grid-column:1/-1;"><div class="dl-label">Attached Document</div>
+        <div class="dl-value">${r.file_name
+          ? `<a href="${r.file_path}" target="_blank" style="color:var(--green-700);font-weight:600;">${esc(r.file_name)}</a>&nbsp;<span style="color:var(--muted);font-weight:400;">(${fmtSize(r.file_size)})</span>`
+          : '<span style="color:var(--muted);font-weight:400;">No file attached</span>'}</div></div>
+      <div style="grid-column:1/-1;color:var(--muted);font-weight:400;font-size:12px;">Last updated ${fmtDate(r.updated_at)}</div>
+    </div>`;
+  document.querySelector('#viewModal .icon-btn').innerHTML = ICONS.x;
+  document.getElementById('viewModal').classList.add('open');
+}
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.getElementById('viewModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('viewModal'); });
+
+/* ---------- Delete with confirmation ---------- */
+async function delRecord(id, docno) {
+  const ok = await confirmAction({
+    title: 'Delete this record?',
+    message: `Record ${docno} will be permanently removed from the notarization records. This cannot be undone.`,
+    confirmText: 'Delete record', danger: true
+  });
+  if (!ok) return;
+  await api('/api/records/' + id, { method: 'DELETE' });
+  toast(`Record ${docno} deleted`);
+  load();
+}
+</script>
+</body>
+</html>

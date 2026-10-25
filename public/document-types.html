@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Document Types — NOTARIX</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<button id="menuBtn" aria-label="Open menu"></button>
+<aside id="sidebar" class="sidebar"></aside>
+<div id="scrim" class="scrim"></div>
+
+<main class="main">
+  <header class="topbar" id="topbar"></header>
+
+  <div class="page-outer">
+    <header class="page-head">
+      <h1>Document Types</h1>
+      <p>Categories used when recording notarized documents.</p>
+    </header>
+
+    <form class="card" id="typeForm" style="max-width:720px;margin-bottom:16px;">
+      <div class="row" style="margin:0;">
+        <input class="input" id="tName" placeholder="New document type name (e.g. Affidavit of Cohabitation)" style="flex:1;min-width:240px;" required>
+        <button class="btn btn-primary" id="addBtn">Add Type</button>
+      </div>
+    </form>
+
+    <div class="card" style="max-width:720px;">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Document Type</th><th style="width:130px;">Records</th><th style="width:98px;">Actions</th></tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div id="toast"></div>
+<script src="js/app.js"></script>
+<script>
+initShell().then(user => {
+  const isAdmin = user && user.role === 'Admin';
+  document.querySelector('#typeForm').style.display = isAdmin ? 'flex' : 'none';
+  const thead = document.querySelector('thead tr');
+  thead.innerHTML = isAdmin ? thead.innerHTML : '<th>Document Type</th><th style="width:130px;">Records</th>';
+  load();
+});
+document.getElementById('addBtn').insertAdjacentHTML('afterbegin', ICONS.plus);
+
+const tbody = document.getElementById('tbody');
+async function load() {
+  tbody.innerHTML = skeletonRows(4, 8);
+  let types;
+  try { types = await api('/api/doc-types'); }
+  catch (err) { tbody.innerHTML = stateRow('Could not load document types', '<div style="margin-bottom:6px;">⚠️</div>'); return; }
+  tbody.innerHTML = types.length ? types.map(t => `
+    <tr>
+      <td><b>${esc(t.name)}</b></td>
+      <td><span class="num" style="color:var(--muted);">${t.count.toLocaleString()} record(s)</span></td>
+      <td><div class="actions">${t.count === 0
+        ? `<button class="icon-btn danger" title="Delete" onclick="delType(${t.id}, '${esc(t.name)}')">${ICONS.trash}</button>`
+        : `<span style="color:var(--muted);font-size:12px;">In use</span>`}</div></td>
+    </tr>`).join('')
+    : stateRow('No document types yet');
+}
+window.loadTypes = load;
+
+document.getElementById('typeForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  try {
+    await api('/api/doc-types', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: document.getElementById('tName').value })
+    });
+    toast('Document type added');
+    document.getElementById('tName').value = '';
+    load();
+  } catch (err) { toast(err.message, true); }
+});
+
+async function delType(id, name) {
+  const ok = await confirmAction({
+    title: 'Delete this document type?',
+    message: `"${name}" is not attached to any record and can be removed.`,
+    confirmText: 'Delete type', danger: true
+  });
+  if (!ok) return;
+  try {
+    await api('/api/doc-types/' + id, { method: 'DELETE' });
+    toast('Document type deleted');
+    load();
+  } catch (err) { toast(err.message, true); }
+}
+</script>
+</body>
+</html>

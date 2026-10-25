@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Search Records — NOTARIX</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<button id="menuBtn" aria-label="Open menu"></button>
+<aside id="sidebar" class="sidebar"></aside>
+<div id="scrim" class="scrim"></div>
+
+<main class="main">
+  <header class="topbar" id="topbar"></header>
+
+  <div class="page-outer">
+    <header class="page-head">
+      <h1>Search &amp; Record Retrieval</h1>
+      <p>Find a notarized document by number, type, client, or date — no digging through physical books.</p>
+    </header>
+
+    <form class="card" id="searchForm" style="margin-bottom:16px;">
+      <div class="row" style="margin-bottom:12px;">
+        <div class="search-box" style="max-width:none;flex:1;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          <input class="input" id="sQuery" placeholder="Enter document number, client name, or keyword…">
+        </div>
+        <button type="submit" class="btn btn-primary" id="sBtn">Search</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;align-items:end;">
+        <div class="field" style="margin:0;"><label>Document Type</label><select class="input" id="sType"><option value="">All types</option></select></div>
+        <div class="field" style="margin:0;"><label>Status</label><select class="input" id="sStatus"><option value="">All statuses</option></select></div>
+        <div class="field" style="margin:0;"><label>Date From</label><input class="input" type="date" id="sFrom"></div>
+        <div class="field" style="margin:0;"><label>Date To</label><input class="input" type="date" id="sTo"></div>
+        <button type="button" class="btn btn-outline" id="clearBtn">Clear Filters</button>
+      </div>
+    </form>
+
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Document No.</th><th>Type</th><th>Client Name</th>
+            <th>Date Notarized</th><th>Status</th><th>Location</th><th style="width:78px;">Actions</th>
+          </tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <span class="page-info" id="pageInfo"></span>
+        <div class="pages" id="pageBtns"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- View modal -->
+<div class="modal-overlay" id="viewModal">
+  <div class="modal">
+    <div class="row" style="justify-content:space-between;margin-bottom:4px;">
+      <h3 style="margin-bottom:0;">Record Details</h3>
+      <button class="icon-btn" onclick="closeModal()" aria-label="Close"></button>
+    </div>
+    <div id="viewBody"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<script src="js/app.js"></script>
+<script>
+initShell();
+document.getElementById('sBtn').insertAdjacentHTML('afterbegin', ICONS.search);
+document.getElementById('sStatus').innerHTML = `<option value="">All statuses</option>` + STATUSES.map(s => `<option>${s}</option>`).join('');
+api('/api/doc-types').then(types => {
+  document.getElementById('sType').innerHTML = `<option value="">All types</option>` + types.map(t => `<option value="${esc(t.name)}">${esc(t.name)}</option>`).join('');
+}).catch(() => {});
+
+/* prefill from dashboard quick search / notification links */
+const params = new URLSearchParams(location.search);
+if (params.get('q')) document.getElementById('sQuery').value = params.get('q');
+if (params.get('type')) document.getElementById('sType').value = params.get('type');
+if (params.get('status')) document.getElementById('sStatus').value = params.get('status');
+if (params.get('from')) document.getElementById('sFrom').value = params.get('from');
+if (params.get('to')) document.getElementById('sTo').value = params.get('to');
+
+let page = 1;
+const LIMIT = 10;
+async function load() {
+  tbody.innerHTML = skeletonRows(7);
+  const q = document.getElementById('sQuery').value.trim();
+  const type = document.getElementById('sType').value;
+  const status = document.getElementById('sStatus').value;
+  const from = document.getElementById('sFrom').value;
+  const to = document.getElementById('sTo').value;
+  let data;
+  try {
+    data = await api(`/api/records?search=${encodeURIComponent(q)}&type=${encodeURIComponent(type)}&status=${encodeURIComponent(status)}&from=${from}&to=${to}&page=${page}&limit=${LIMIT}`);
+  } catch (err) {
+    tbody.innerHTML = stateRow('Could not load records', '<div style="margin-bottom:6px;">⚠️</div>');
+    document.getElementById('pageInfo').textContent = '';
+    document.getElementById('pageBtns').innerHTML = '';
+    return;
+  }
+  tbody.innerHTML = data.rows.length ? data.rows.map(r => `
+    <tr>
+      <td><span class="doc-no">${esc(r.doc_number)}</span></td>
+      <td>${esc(r.doc_type)}</td>
+      <td>${esc(r.client_name)}</td>
+      <td>${fmtDate(r.date_notarized)}</td>
+      <td><span class="badge ${badgeClass(r.status)}">${esc(r.status)}</span></td>
+      <td><span class="loc">${esc(r.location || r.status)}</span></td>
+      <td><div class="actions">
+        <button class="icon-btn" title="View" onclick="viewRecord(${r.id})">${ICONS.view}</button>
+        <a class="icon-btn" title="Edit" href="add-record.html?id=${r.id}">${ICONS.edit}</a>
+      </div></td>
+    </tr>`).join('')
+    : stateRow('No matching records found', ICONS.inbox.replace('viewBox', 'width="30" height="30" viewBox'));
+  document.getElementById('pageInfo').textContent = data.total
+    ? `${data.total.toLocaleString()} record(s) found` : 'No records found';
+  renderPager(data);
+}
+function renderPager(data) {
+  const div = document.getElementById('pageBtns');
+  if (data.pages <= 1) { div.innerHTML = ''; return; }
+  let btns = `<button class="arrow" ${data.page <= 1 ? 'disabled' : ''} data-page="${data.page - 1}">‹</button>`;
+  const start = Math.max(1, data.page - 2), end = Math.min(data.pages, start + 4);
+  const s = Math.max(1, Math.min(start, end - 4));
+  for (let i = s; i <= end; i++) btns += `<button ${i === data.page ? 'class="cur"' : ''} data-page="${i}">${i}</button>`;
+  if (data.pages > end) btns += `<button class="arrow" disabled>…</button><button data-page="${data.pages}">${data.pages}</button>`;
+  btns += `<button class="arrow" ${data.page >= data.pages ? 'disabled' : ''} data-page="${data.page + 1}">›</button>`;
+  div.innerHTML = btns;
+  div.querySelectorAll('button:not([disabled])').forEach(b => b.addEventListener('click', () => { page = +b.dataset.page; load(); window.scrollTo({ top: 0, behavior: 'smooth' }); }));
+}
+const tbody = document.getElementById('tbody');
+document.getElementById('searchForm').addEventListener('submit', e => { e.preventDefault(); page = 1; load(); });
+document.getElementById('clearBtn').addEventListener('click', () => {
+  ['sQuery', 'sFrom', 'sTo'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('sType').value = ''; document.getElementById('sStatus').value = '';
+  page = 1; load();
+});
+load();
+
+async function viewRecord(id) {
+  const r = await api('/api/records/' + id);
+  document.getElementById('viewBody').innerHTML = `
+    <div class="dl-grid" style="margin-top:10px;">
+      <div><div class="dl-label">Document Number</div><div class="dl-value">${esc(r.doc_number)}</div></div>
+      <div><div class="dl-label">Document Type</div><div class="dl-value">${esc(r.doc_type)}</div></div>
+      <div><div class="dl-label">Client Name</div><div class="dl-value">${esc(r.client_name)}</div></div>
+      <div><div class="dl-label">Date Notarized</div><div class="dl-value">${fmtDate(r.date_notarized)}</div></div>
+      <div><div class="dl-label">Status</div><div class="dl-value"><span class="badge ${badgeClass(r.status)}">${esc(r.status)}</span></div></div>
+      <div><div class="dl-label">Location</div><div class="dl-value">${esc(r.location || r.status)}</div></div>
+      <div style="grid-column:1/-1;"><div class="dl-label">Remarks</div><div class="dl-value">${esc(r.remarks) || '—'}</div></div>
+      <div style="grid-column:1/-1;"><div class="dl-label">Attached Document</div>
+        <div class="dl-value">${r.file_name
+          ? `<a href="${r.file_path}" target="_blank" style="color:var(--green-700);font-weight:600;">${esc(r.file_name)}</a>&nbsp;<span style="color:var(--muted);font-weight:400;">(${fmtSize(r.file_size)})</span>`
+          : '<span style="color:var(--muted);font-weight:400;">No file attached</span>'}</div></div>
+    </div>`;
+  document.querySelector('#viewModal .icon-btn').innerHTML = ICONS.x;
+  document.getElementById('viewModal').classList.add('open');
+}
+function closeModal() { document.getElementById('viewModal').classList.remove('open'); }
+document.getElementById('viewModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
+</script>
+</body>
+</html>

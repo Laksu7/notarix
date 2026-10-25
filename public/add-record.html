@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Add Record — NOTARIX</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<button id="menuBtn" aria-label="Open menu"></button>
+<aside id="sidebar" class="sidebar"></aside>
+<div id="scrim" class="scrim"></div>
+
+<main class="main">
+  <header class="topbar" id="topbar"></header>
+
+  <div class="page-outer">
+    <header class="page-head">
+      <h1 id="pageTitle">Add New Notarization Record</h1>
+      <p id="pageSub">After the document is physically notarized, record it here.</p>
+    </header>
+
+    <div id="alertBox"></div>
+
+    <div style="display:grid;grid-template-columns:1.55fr 1fr;gap:18px;" class="add-grid">
+      <form class="card" id="recForm" novalidate>
+        <div class="form-grid-2">
+          <div class="field">
+            <label>Document Number <span class="req">*</span></label>
+            <input class="input" id="docNumber" placeholder="NR-2026-0157" required>
+            <div id="dupHint"></div>
+          </div>
+          <div class="field">
+            <label>Document Type <span class="req">*</span></label>
+            <select class="input" id="docType" required></select>
+          </div>
+          <div class="field">
+            <label>Client Name <span class="req">*</span></label>
+            <input class="input" id="clientName" placeholder="Enter the client's full name" required>
+          </div>
+          <div class="field">
+            <label>Date Notarized <span class="req">*</span></label>
+            <input class="input" type="date" id="dateNotarized" required>
+          </div>
+          <div class="field">
+            <label>Status <span class="req">*</span></label>
+            <select class="input" id="status" required></select>
+          </div>
+          <div class="field">
+            <label>Location</label>
+            <input class="input" id="location" placeholder="e.g. Law Office, Main Office" list="locations">
+            <datalist id="locations">
+              <option value="Law Office"></option>
+              <option value="Main Office"></option>
+              <option value="Others"></option>
+            </datalist>
+            <div style="font-size:11.5px;color:var(--muted);margin-top:4px;">Where the document is physically kept. Defaults to its status.</div>
+          </div>
+        </div>
+        <div class="field">
+          <label>Remarks</label>
+          <textarea class="input" id="remarks" placeholder="Additional notes (optional)"></textarea>
+        </div>
+        <div class="field">
+          <label id="uploadLabel">Upload Document (Optional)</label>
+          <div class="dropzone" id="dropzone">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+            <div><b style="color:var(--ink)">Click to upload</b> or drag and drop</div>
+            <div style="font-size:12px;">PDF, JPG, PNG, DOC, XLS — max 5 MB</div>
+          </div>
+          <input type="file" id="fileInput" hidden accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx">
+          <div id="fileCard"></div>
+        </div>
+        <div class="row" style="justify-content:flex-end;margin:6px 0 0;">
+          <button type="button" class="btn btn-outline" onclick="location.href='records.html'">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="saveBtn"><span id="saveLabel">Save Record</span></button>
+        </div>
+      </form>
+
+      <div class="card">
+        <div class="card-title" style="font-size:16.5px;">Document Preview</div>
+        <div class="preview-card" id="previewCard" style="margin-top:12px;min-height:250px;display:flex;flex-direction:column;justify-content:center;gap:3px;"></div>
+        <div style="font-size:12px;color:var(--muted);margin-top:12px;line-height:1.6;">
+          <b style="color:var(--ink);">Before saving</b> — the system checks whether the document number has already been recorded. Numbers already on file cannot be saved again.
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div id="toast"></div>
+<script src="js/app.js"></script>
+<script>
+initShell();
+
+document.getElementById('status').innerHTML = STATUSES.map(s => `<option>${s}</option>`).join('');
+(function () { const d = new Date(); document.getElementById('dateNotarized').value =
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
+
+const params = new URLSearchParams(location.search);
+const editId = params.get('id');
+let currentFile = null;
+let typesReady = api('/api/doc-types').then(types => {
+  document.getElementById('docType').innerHTML = `<option value="">Select type*</option>` + types.map(t => `<option value="${esc(t.name)}">${esc(t.name)}</option>`).join('');
+  return types;
+});
+
+if (editId) {
+  document.getElementById('pageTitle').textContent = 'Edit Notarization Record';
+  document.getElementById('pageSub').textContent = 'Correct miswritten information or update the record.';
+  document.getElementById('uploadLabel').textContent = 'Current Document';
+  api('/api/records/' + editId).then(r => {
+    typesReady.then(() => {
+      document.getElementById('docNumber').value = r.doc_number;
+      document.getElementById('docType').value = r.doc_type;
+      document.getElementById('clientName').value = r.client_name;
+      document.getElementById('dateNotarized').value = r.date_notarized;
+      document.getElementById('status').value = r.status;
+      document.getElementById('location').value = r.location || '';
+      document.getElementById('remarks').value = r.remarks || '';
+      updatePreviewName();
+    });
+    currentFile = r.file_name;
+    if (r.file_name) {
+      document.getElementById('fileCard').innerHTML = `
+        <div class="file-card">${ICONS.file}
+          <a href="${r.file_path}" target="_blank" style="flex:1;color:var(--green-700);font-weight:600;">${esc(r.file_name)}</a>
+          <span style="color:var(--muted);font-size:12px;">${fmtSize(r.file_size)}</span>
+          <button type="button" class="btn btn-outline btn-sm" onclick="replaceFile()">Replace File</button>
+        </div>`;
+      document.getElementById('dropzone').style.display = 'none';
+    }
+  });
+}
+
+function replaceFile() {
+  document.getElementById('fileCard').innerHTML = '';
+  currentFile = null;
+  const dz = document.getElementById('dropzone');
+  dz.style.display = 'block';
+  dz.querySelector('div:nth-of-type(2)').textContent = 'Choose a new file to replace the current one';
+  document.getElementById('fileInput').click();
+}
+
+let pendingFile = null;
+const fileInput = document.getElementById('fileInput');
+const dropzone = document.getElementById('dropzone');
+dropzone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => {
+  const f = fileInput.files[0];
+  if (!f) return;
+  if (f.size > 5 * 1024 * 1024) { toast('File is too large (max 5 MB)', true); fileInput.value = ''; return; }
+  pendingFile = f;
+  document.getElementById('fileCard').innerHTML = `
+    <div class="file-card">${ICONS.file}<span style="flex:1;font-weight:600;">${esc(f.name)}</span>
+    <span style="color:var(--muted);font-size:12px;">${fmtSize(f.size)}</span></div>`;
+  updatePreviewName();
+});
+['dragover', 'drop'].forEach(ev => dropzone.addEventListener(ev, e => {
+  e.preventDefault();
+  if (ev === 'drop') fileInput.files = e.dataTransfer.files;
+  fileInput.dispatchEvent(new Event('change'));
+}));
+
+function updatePreviewName() {
+  const c = document.getElementById('previewCard');
+  const name = pendingFile ? pendingFile.name : currentFile;
+  if (name) {
+    c.innerHTML = `${ICONS.file.replace('viewBox', 'width="34" height="34" viewBox')}
+      <b style="color:var(--ink);">${esc(name)}</b>
+      <p style="font-size:12px;">${pendingFile ? 'Selected for upload' : 'Attached to this record'}</p>`;
+  } else {
+    c.innerHTML = `${ICONS.doc.replace('viewBox', 'width="34" height="34" viewBox')}
+      <b style="color:var(--ink);">No file selected</b>
+      <p style="font-size:12px;">Upload a copy of the notarized document to keep it with the record.</p>`;
+  }
+}
+updatePreviewName();
+
+/* Duplicate document-number check (saved live while typing) */
+const docNumberEl = document.getElementById('docNumber');
+let dupValid = null;
+let checkTimer;
+docNumberEl.addEventListener('input', () => {
+  clearTimeout(checkTimer);
+  const hint = document.getElementById('dupHint');
+  hint.innerHTML = '';
+  dupValid = null;
+  const v = docNumberEl.value.trim();
+  if (!v) return;
+  checkTimer = setTimeout(async () => {
+    try {
+      const res = await api('/api/records/check/' + encodeURIComponent(v));
+      if (res.exists && String(res.record.id) !== editId) {
+        dupValid = false;
+        docNumberEl.classList.add('input-invalid');
+        hint.innerHTML = `<div class="hint-bad">✕ ${esc(v)} has already been recorded — client: ${esc(res.record.client_name)}, ${fmtDate(res.record.date_notarized)}.</div>`;
+      } else {
+        dupValid = true;
+        docNumberEl.classList.remove('input-invalid');
+        hint.innerHTML = `<div class="hint-ok">✓ Document number is available</div>`;
+      }
+    } catch {}
+  }, 380);
+});
+docNumberEl.addEventListener('blur', () => { if (docNumberEl.value.trim() && dupValid === null) docNumberEl.dispatchEvent(new Event('input')); });
+
+/* mark required fields on submit */
+function validateForm() {
+  const reqs = ['docNumber', 'docType', 'clientName', 'dateNotarized', 'status'];
+  let bad = false;
+  reqs.forEach(id => {
+    const el = document.getElementById(id);
+    const empty = !el.value.trim();
+    el.classList.toggle('input-invalid', empty);
+    if (empty) bad = true;
+  });
+  if (bad) {
+    document.getElementById('alertBox').innerHTML = '<div class="alert error">Please fill in all required fields marked with *.</div>';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return false;
+  }
+  return true;
+}
+['docType', 'clientName', 'dateNotarized', 'status'].forEach(id =>
+  document.getElementById(id).addEventListener('change', e => e.target.classList.remove('input-invalid')));
+['docNumber', 'clientName'].forEach(id =>
+  document.getElementById(id).addEventListener('input', e => e.target.classList.remove('input-invalid')));
+
+document.getElementById('recForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  if (dupValid === false) {
+    document.getElementById('alertBox').innerHTML = '<div class="alert error">This document number has already been recorded. Enter a different number.</div>';
+    docNumberEl.classList.add('input-invalid');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+  if (!validateForm()) return;
+  const fd = new FormData();
+  fd.append('doc_number', docNumberEl.value.trim());
+  fd.append('doc_type', document.getElementById('docType').value);
+  fd.append('client_name', document.getElementById('clientName').value.trim());
+  fd.append('date_notarized', document.getElementById('dateNotarized').value);
+  fd.append('status', document.getElementById('status').value);
+  fd.append('location', document.getElementById('location').value);
+  fd.append('remarks', document.getElementById('remarks').value);
+  if (pendingFile && fileInput.files[0]) fd.append('document', fileInput.files[0]);
+
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = true;
+  document.getElementById('saveLabel').innerHTML = '<span class="spinner"></span>&nbsp; Saving…';
+  try {
+    if (editId) await api('/api/records/' + editId, { method: 'PUT', body: fd });
+    else await api('/api/records', { method: 'POST', body: fd });
+    toast(editId ? 'Record updated successfully' : 'Record saved successfully');
+    setTimeout(() => location.href = 'records.html', 700);
+  } catch (err) {
+    btn.disabled = false;
+    document.getElementById('saveLabel').textContent = 'Save Record';
+    document.getElementById('alertBox').innerHTML = `<div class="alert error">${err.message}</div>`;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+});
+</script>
+</body>
+</html>

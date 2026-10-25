@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Document Status &amp; Location — NOTARIX</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<button id="menuBtn" aria-label="Open menu"></button>
+<aside id="sidebar" class="sidebar"></aside>
+<div id="scrim" class="scrim"></div>
+
+<main class="main">
+  <header class="topbar" id="topbar"></header>
+
+  <div class="page-outer">
+    <header class="page-head">
+      <h1>Document Status &amp; Location</h1>
+      <p>Track where each notarized document currently is — update without editing the whole record.</p>
+    </header>
+
+    <div class="tabs" id="tabs" style="margin-bottom:16px;"></div>
+
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Document No.</th><th>Type</th><th>Client Name</th><th>Date Notarized</th>
+            <th style="width:170px;">Status</th><th style="width:190px;">Location</th><th style="width:78px;">Actions</th>
+          </tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <span class="page-info" id="pageInfo"></span>
+        <div class="pages" id="pageBtns"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div id="toast"></div>
+<script src="js/app.js"></script>
+<script>
+initShell();
+let page = 1, activeStatus = '';
+const LIMIT = 10;
+const tbody = document.getElementById('tbody');
+
+async function loadCounts() {
+  let all, per = {};
+  try {
+    all = await api('/api/records?limit=1&page=1');
+    for (const s of STATUSES) per[s] = (await api(`/api/records?status=${encodeURIComponent(s)}&limit=1&page=1`)).total;
+  } catch (err) { return; }
+  const tabs = [['', all.total], ...STATUSES.map(s => [s, per[s]])];
+  document.getElementById('tabs').innerHTML = tabs.map(([key, n]) =>
+    `<button type="button" class="tab ${key === activeStatus ? 'active' : ''}" data-key="${key}">
+      ${key || 'All Documents'} <span class="count">${n.toLocaleString()}</span></button>`).join('');
+  document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+    activeStatus = t.dataset.key; page = 1;
+    document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));
+    load();
+  }));
+}
+
+async function load() {
+  tbody.innerHTML = skeletonRows(7);
+  let data;
+  try {
+    data = await api(`/api/records?status=${encodeURIComponent(activeStatus)}&page=${page}&limit=${LIMIT}`);
+  } catch (err) {
+    tbody.innerHTML = stateRow('Could not load records', '<div style="margin-bottom:6px;">⚠️</div>');
+    return;
+  }
+  tbody.innerHTML = data.rows.length ? data.rows.map(r => `
+    <tr>
+      <td><span class="doc-no">${esc(r.doc_number)}</span></td>
+      <td>${esc(r.doc_type)}</td>
+      <td>${esc(r.client_name)}</td>
+      <td>${fmtDate(r.date_notarized)}</td>
+      <td>
+        <select class="input status-select" data-id="${r.id}">
+          ${STATUSES.map(s => `<option ${s === r.status ? 'selected' : ''}>${s}</option>`).join('')}
+        </select>
+      </td>
+      <td>
+        <input class="input loc-input" data-id="${r.id}" value="${esc(r.location || r.status)}"
+          placeholder="e.g. Main Office" style="font-size:13px;padding:6px 10px;">
+      </td>
+      <td><div class="actions">
+        <a class="icon-btn" title="Edit record" href="add-record.html?id=${r.id}">${ICONS.edit}</a>
+      </div></td>
+    </tr>`).join('')
+    : stateRow('No documents with this status', ICONS.inbox.replace('viewBox', 'width="30" height="30" viewBox'));
+
+  const from = data.total === 0 ? 0 : (data.page - 1) * LIMIT + 1;
+  const to = Math.min(data.page * LIMIT, data.total);
+  document.getElementById('pageInfo').textContent = data.total ? `Showing ${from}–${to} of ${data.total.toLocaleString()} document(s)` : '';
+  const div = document.getElementById('pageBtns');
+  if (data.pages > 1) {
+    let btns = `<button class="arrow" ${data.page <= 1 ? 'disabled' : ''} data-page="${data.page - 1}">‹</button>`;
+    const start = Math.max(1, data.page - 2), end = Math.min(data.pages, start + 4);
+    const s = Math.max(1, Math.min(start, end - 4));
+    for (let i = s; i <= end; i++) btns += `<button ${i === data.page ? 'class="cur"' : ''} data-page="${i}">${i}</button>`;
+    btns += `<button class="arrow" ${data.page >= data.pages ? 'disabled' : ''} data-page="${data.page + 1}">›</button>`;
+    div.innerHTML = btns;
+    div.querySelectorAll('button:not([disabled])').forEach(b => b.addEventListener('click', () => { page = +b.dataset.page; load(); }));
+  } else div.innerHTML = '';
+
+  /* inline updates via the tracking endpoint */
+  tbody.querySelectorAll('.status-select').forEach(sel => sel.addEventListener('change', async () => {
+    try {
+      const res = await api(`/api/records/${sel.dataset.id}/track`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: sel.value })
+      });
+      toast(`Status updated to "${res.status}"`);
+      loadCounts();
+    } catch (err) { toast(err.message, true); }
+  }));
+  tbody.querySelectorAll('.loc-input').forEach(inp => {
+    const save = async () => {
+      try {
+        const res = await api(`/api/records/${inp.dataset.id}/track`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ location: inp.value })
+        });
+        inp.value = res.location;
+        toast(`Location updated to "${res.location}"`);
+      } catch (err) { toast(err.message, true); }
+    };
+    inp.addEventListener('blur', save);
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } });
+  });
+}
+loadCounts().then(load);
+</script>
+</body>
+</html>

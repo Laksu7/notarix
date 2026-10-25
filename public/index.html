@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NOTARIX — Digitalized Notarization Record Management System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<section class="hero" id="home">
+  <div class="hero-content">
+    <div id="lockup"></div>
+    <h1>NOTAR<span>IX</span></h1>
+    <p class="tagline-sub"><b>Digitalized Notarization Record Management System</b></p>
+    <p class="tagline">Accurate&nbsp;&nbsp;·&nbsp;&nbsp;Organized&nbsp;&nbsp;·&nbsp;&nbsp;Trusted</p>
+    <div class="actions">
+      <a href="login.html" class="btn btn-gold">Login</a>
+      <a href="#features" class="btn btn-outline">Learn More</a>
+    </div>
+  </div>
+</section>
+
+<section id="features" style="background:#fff;padding:70px 8vw;">
+  <h2 style="color:var(--navy);font-size:30px;font-weight:600;margin-bottom:8px;">What NOTARIX does</h2>
+  <p style="color:var(--muted);margin-bottom:34px;">A single system for the law office's notarization logs — instead of handwritten record books.</p>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;">
+    <div class="card"><b style="color:var(--green-800)">1. Digital Record Entry</b><p style="color:var(--muted);margin-top:8px">Record notarized documents after signing — document number, type, client name, date, status, and location.</p></div>
+    <div class="card"><b style="color:var(--green-800)">2. Duplicate Checking</b><p style="color:var(--muted);margin-top:8px">The system checks whether a document number already exists before saving — duplicates cannot be recorded.</p></div>
+    <div class="card"><b style="color:var(--green-800)">3. Organized Records</b><p style="color:var(--muted);margin-top:8px">Every record is stored in one organized database and displayed in a clean, paginated table.</p></div>
+    <div class="card"><b style="color:var(--green-800)">4. Search &amp; Retrieval</b><p style="color:var(--muted);margin-top:8px">Find any record by document number, document type, client name, or date — in seconds.</p></div>
+    <div class="card"><b style="color:var(--green-800)">5. Update / Edit</b><p style="color:var(--muted);margin-top:8px">Authorized staff can correct miswritten entries or update record information safely.</p></div>
+    <div class="card"><b style="color:var(--green-800)">6. Status &amp; Location</b><p style="color:var(--muted);margin-top:8px">Track whether a document is In Office, For Submission, at the Main Office, or elsewhere.</p></div>
+    <div class="card"><b style="color:var(--green-800)">7. Monthly Reports</b><p style="color:var(--muted);margin-top:8px">Records are organized by month, with export to PDF or Excel for the monthly report.</p></div>
+    <div class="card"><b style="color:var(--green-800)">8. Roles</b><p style="color:var(--muted);margin-top:8px">The administrator manages staff accounts and settings; secretaries handle daily records.</p></div>
+  </div>
+  <p style="margin-top:40px;"><a href="login.html" class="btn btn-primary">Go to Login →</a></p>
+</section>
+
+<script src="js/app.js"></script>
+<script>
+document.getElementById('lockup').innerHTML = notarixMark(56, 'dark');
+</script>
+</body>
+</html>

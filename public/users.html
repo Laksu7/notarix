@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Staff Accounts — NOTARIX</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<button id="menuBtn" aria-label="Open menu"></button>
+<aside id="sidebar" class="sidebar"></aside>
+<div id="scrim" class="scrim"></div>
+
+<main class="main">
+  <header class="topbar" id="topbar"></header>
+
+  <div class="page-outer">
+    <header class="page-head">
+      <h1>Staff Accounts</h1>
+      <p>Manage secretary and staff accounts that can access the system.</p>
+    </header>
+
+    <div id="guardBox" class="alert info" style="display:none;">This page is only available to the office administrator.</div>
+
+    <div id="adminArea">
+      <div class="row" style="margin:0 0 16px;"><a class="btn btn-primary" href="#" id="addBtn">Add Staff Account</a></div>
+
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th style="width:46px;">#</th><th>Name</th><th>Email Address</th><th>Role</th><th style="width:98px;">Actions</th></tr></thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- Add user modal (email verified with a one-time code) -->
+<div class="modal-overlay" id="addModal">
+  <div class="modal" style="max-width:460px;">
+    <div class="row" style="justify-content:space-between;margin-bottom:4px;">
+      <h3 style="margin-bottom:0;">Add New User</h3>
+      <button class="icon-btn" onclick="closeModal()" aria-label="Close"></button>
+    </div>
+    <p style="font-size:12.5px;color:var(--muted);margin:8px 0 0;">Any email address can be used. A 6-digit verification code is requested for that email, and the account is created only once the code is confirmed.</p>
+    <form id="userForm" style="margin-top:12px;">
+      <div class="field"><label>Full Name</label><input class="input" id="uName" placeholder="Full name of the staff member" required></div>
+      <div class="field"><label>Email Address</label><input class="input" type="email" id="uEmail" placeholder="name@gmail.com" required></div>
+      <div class="field"><label>Password</label><input class="input" type="password" id="uPass" minlength="5" placeholder="At least 5 characters" required></div>
+      <div class="field"><label>Role</label>
+        <select class="input" id="uRole">
+          <option value="Staff">Secretary / Staff</option>
+          <option value="Admin">Administrator</option>
+        </select>
+      </div>
+
+      <div id="codePanel" style="display:none;margin-bottom:14px;">
+        <div class="alert ok" style="margin:0 0 10px;">
+          <div>Verification code issued for <b id="codeEmail"></b> — valid for 10 minutes.</div>
+          <div style="margin-top:4px;" id="codeNote"></div>
+          <div class="code-display" id="codeShown"></div>
+        </div>
+        <div class="field" style="margin-bottom:0;"><label>Enter the verification code <span class="req">*</span></label>
+          <input class="input" id="uCode" inputmode="numeric" maxlength="6" placeholder="· · · · · ·" required autocomplete="one-time-code" style="letter-spacing:7px;font-weight:600;text-align:center;">
+        </div>
+      </div>
+
+      <div class="row" style="justify-content:flex-end;margin:4px 0 0;">
+        <button type="button" class="btn btn-outline" onclick="closeModal()">Cancel</button>
+        <button type="button" class="btn btn-outline" id="sendCodeBtn">Send Verification Code</button>
+        <button type="submit" class="btn btn-primary" id="saveBtn" disabled>Create Account</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="toast"></div>
+<script src="js/app.js"></script>
+<script>
+initShell().then(user => {
+  const isAdmin = user && user.role === 'Admin';
+  document.getElementById('guardBox').style.display = isAdmin ? 'none' : 'block';
+  document.getElementById('adminArea').style.display = isAdmin ? 'block' : 'none';
+  if (!isAdmin) return;
+  document.getElementById('addBtn').insertAdjacentHTML('afterbegin', ICONS.plus);
+  load();
+});
+
+const tbody = document.getElementById('tbody');
+async function load() {
+  tbody.innerHTML = skeletonRows(4);
+  let users;
+  try { users = await api('/api/users'); }
+  catch (err) { tbody.innerHTML = stateRow('Could not load accounts', '<div style="margin-bottom:6px;">⚠️</div>'); return; }
+  tbody.innerHTML = users.map((u, i) => `
+    <tr>
+      <td class="num">${i + 1}</td>
+      <td><b>${esc(u.name)}</b></td>
+      <td>${esc(u.email)}</td>
+      <td><span class="badge ${u.role === 'Admin' ? 'role-admin' : 'role-staff'}">${u.role === 'Admin' ? 'Administrator' : 'Secretary / Staff'}</span></td>
+      <td><div class="actions">${u.id !== window.CURRENT_USER.id
+        ? `<button class="icon-btn danger" title="Delete" onclick="delUser(${u.id}, '${esc(u.name)}')">${ICONS.trash}</button>`
+        : `<span style="color:var(--muted);font-size:12px;">You</span>`}</div></td>
+    </tr>`).join('');
+}
+
+/* ---------- Verification code flow ---------- */
+const addModal = document.getElementById('addModal');
+document.getElementById('addBtn').addEventListener('click', e => {
+  e.preventDefault();
+  addModal.classList.add('open');
+});
+function closeModal() { document.getElementById('addModal').classList.remove('open'); }
+document.querySelector('#addModal .icon-btn').innerHTML = ICONS.x;
+addModal.addEventListener('click', e => { if (e.target === addModal) closeModal(); });
+
+const codePanel = document.getElementById('codePanel');
+const sendCodeBtn = document.getElementById('sendCodeBtn');
+const saveBtn = document.getElementById('saveBtn');
+let sentFor = ''; // email the issued code belongs to
+
+document.getElementById('uEmail').addEventListener('input', () => {
+  const mail = document.getElementById('uEmail').value.trim().toLowerCase();
+  if (sentFor && mail !== sentFor) {
+    sentFor = '';
+    codePanel.style.display = 'none';
+    saveBtn.disabled = true;
+    sendCodeBtn.textContent = 'Send Verification Code';
+  }
+});
+
+sendCodeBtn.addEventListener('click', async () => {
+  const email = document.getElementById('uEmail').value.trim();
+  if (!email) { toast('Enter the email address first', true); document.getElementById('uEmail').focus(); return; }
+  sendCodeBtn.disabled = true;
+  saveBtn.disabled = true;
+  sendCodeBtn.textContent = 'Sending…';
+  try {
+    const r = await api('/api/verify-email', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+    codePanel.style.display = 'block';
+    document.getElementById('codeEmail').textContent = email;
+    document.getElementById('codeShown').textContent = r.delivered ? '' : r.code;
+    document.getElementById('codeShown').style.display = r.delivered ? 'none' : 'block';
+    document.getElementById('codeNote').textContent = r.delivered
+      ? 'Check this inbox and enter the 6-digit code you received.'
+      : 'Outgoing email is not configured yet, so the code is shown here instead of being emailed:';
+    sentFor = email.toLowerCase();
+    saveBtn.disabled = false;
+    sendCodeBtn.textContent = 'Resend Code';
+    document.getElementById('uCode').focus();
+  } catch (err) {
+    toast(err.message, true);
+    sendCodeBtn.textContent = sentFor ? 'Resend Code' : 'Send Verification Code';
+  } finally {
+    sendCodeBtn.disabled = false;
+  }
+});
+
+document.getElementById('userForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  try {
+    await api('/api/users', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: document.getElementById('uName').value.trim(),
+        email: document.getElementById('uEmail').value.trim(),
+        password: document.getElementById('uPass').value,
+        role: document.getElementById('uRole').value,
+        code: document.getElementById('uCode').value.trim()
+      })
+    });
+    toast('Account created — email verified with the code');
+    closeModal();
+    document.getElementById('userForm').reset();
+    sentFor = '';
+    codePanel.style.display = 'none';
+    saveBtn.disabled = true;
+    sendCodeBtn.textContent = 'Send Verification Code';
+    load();
+  } catch (err) { toast(err.message, true); }
+});
+
+async function delUser(id, name) {
+  const ok = await confirmAction({
+    title: 'Delete this account?',
+    message: `${name} will no longer be able to sign in to the system.`,
+    confirmText: 'Delete account', danger: true
+  });
+  if (!ok) return;
+  try {
+    await api('/api/users/' + id, { method: 'DELETE' });
+    toast('User account deleted');
+    load();
+  } catch (err) { toast(err.message, true); }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+# Runtime / dependencies
+node_modules/
+npm-debug.log*
+
+# Database — the real records live here, keep them out of the repo
+notarium.db
+notarium.db-wal
+notarium.db-shm
+
+# Uploaded documents
+uploads/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.vscode/

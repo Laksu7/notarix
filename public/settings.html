@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Office Settings — NOTARIX</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<button id="menuBtn" aria-label="Open menu"></button>
+<aside id="sidebar" class="sidebar"></aside>
+<div id="scrim" class="scrim"></div>
+
+<main class="main">
+  <header class="topbar" id="topbar"></header>
+
+  <div class="page-outer">
+    <header class="page-head">
+      <h1>System Settings</h1>
+      <p>Office information shown on generated monthly reports.</p>
+    </header>
+
+    <div id="adminShortcuts" class="row" style="display:none;gap:10px;margin-bottom:14px;max-width:520px;">
+      <a class="btn btn-outline" href="users.html" id="lnkUsers">Staff Accounts</a>
+      <a class="btn btn-outline" href="document-types.html" id="lnkTypes">Document Types</a>
+    </div>
+
+    <form class="card" id="setForm" style="max-width:520px;">
+      <div class="field"><label>Office Name</label><input class="input" id="sName" placeholder="Notarix Notarial Office"></div>
+      <div class="field"><label>Office Address</label><input class="input" id="sAddress" placeholder="Street, City"></div>
+      <div class="field"><label>Contact Number</label><input class="input" id="sContact" placeholder="(02) 8000-0000"></div>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <button class="btn btn-primary" id="saveBtn" type="submit"><span id="saveLabel">Save Settings</span></button>
+        <span id="staffNote" style="display:none;font-size:12px;color:var(--muted);">Only the administrator can change these settings.</span>
+      </div>
+    </form>
+  </div>
+</main>
+
+<div id="toast"></div>
+<script src="js/app.js"></script>
+<script>
+initShell().then(user => {
+  const isAdmin = user && user.role === 'Admin';
+  if (isAdmin) {
+    document.getElementById('adminShortcuts').style.display = 'flex';
+    document.getElementById('lnkUsers').insertAdjacentHTML('afterbegin', ICONS.users);
+    document.getElementById('lnkTypes').insertAdjacentHTML('afterbegin', ICONS.docType);
+  } else {
+    document.getElementById('saveBtn').disabled = true;
+    document.getElementById('staffNote').style.display = 'inline';
+    ['sName', 'sAddress', 'sContact'].forEach(id => document.getElementById(id).readOnly = true);
+  }
+});
+(async () => {
+  try {
+    const s = await api('/api/settings');
+    document.getElementById('sName').value = s.office_name || '';
+    document.getElementById('sAddress').value = s.office_address || '';
+    document.getElementById('sContact').value = s.office_contact || '';
+  } catch {}
+})();
+document.getElementById('setForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = true;
+  document.getElementById('saveLabel').innerHTML = '<span class="spinner"></span>&nbsp; Saving…';
+  try {
+    await api('/api/settings', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        office_name: document.getElementById('sName').value,
+        office_address: document.getElementById('sAddress').value,
+        office_contact: document.getElementById('sContact').value
+      })
+    });
+    toast('Settings saved');
+  } catch (err) { toast(err.message, true); }
+  btn.disabled = false;
+  document.getElementById('saveLabel').textContent = 'Save Settings';
+});
+</script>
+</body>
+</html>
