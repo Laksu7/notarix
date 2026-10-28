@@ -1,33 +1,43 @@
 /* ============ NOTARIX — shared app logic ============ */
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-const STATUSES = ['In Office', 'Submitted', 'Main Office', 'Others'];
+const STATUSES = ['For Submission', 'Submitted'];
+/* Location always follows the status — staff never pick it manually */
+const STATUS_LOCATION = { 'For Submission': 'Law Office', 'Submitted': 'Main Office' };
 
-/* ---------- NOTARIX logo ---------- */
+/* ---------- NOTARIX logo ----------
+   Matches the office brand reference: a serif navy "N" over a document,
+   circled by a gold swoosh with a gold pen nib. theme 'light' renders the
+   navy-and-gold look for white backgrounds; theme 'dark' inverts the ink
+   to ivory so the mark stays crisp on the navy/green app chrome. */
 function notarixMark(size, theme = 'light') {
-  const navy = theme === 'light' ? '#102d50' : '#f4f1e8';
+  const light = theme === 'light';
+  const ink = light ? '#13294b' : '#f4f1e8';        // wordmark ink (navy / ivory)
+  const docLine = light ? '#f8f7f2' : '#13294b';    // lines on the document
+  const fold = light ? '#274b77' : '#dcd6c3';       // folded corner of the document
+  const hole = light ? '#f8f7f2' : '#13294b';       // nib hole
   const gold = '#c5a45d';
   const goldDeep = '#a8873f';
-  const holeFill = theme === 'light' ? '#f8f7f2' : '#12322d';
+  const id = `nxG${light ? 'L' : 'D'}`;
   return `<svg class="mark" width="${size}" height="${size}" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
   <defs>
-    <linearGradient id="nxGold${theme}" x1="8" y1="86" x2="92" y2="30" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#9c7c35"/><stop offset=".45" stop-color="${gold}"/><stop offset="1" stop-color="#d8b46a"/>
+    <linearGradient id="${id}" x1="6" y1="82" x2="92" y2="34" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#9c7c35"/><stop offset=".45" stop-color="${gold}"/><stop offset="1" stop-color="#dcc07c"/>
     </linearGradient>
   </defs>
-  <path d="M55.5 9.5h20.8l9.2 9.4v27.6h-30z" fill="none" stroke="${navy}" stroke-width="4.4" stroke-linejoin="round"/>
-  <path d="M76.3 9.5v9.4h9.2" fill="none" stroke="${navy}" stroke-width="4" stroke-linejoin="round"/>
-  <path d="M62.5 26h14M62.5 33h14M62.5 40h9.5" stroke="${navy}" stroke-width="3.6" stroke-linecap="round"/>
-  <ellipse cx="46" cy="55" rx="42" ry="15.5" transform="rotate(-13 46 55)" stroke="url(#nxGold${theme})" stroke-width="4.6" fill="none"/>
-  <text x="9" y="88.5" font-family="Georgia,'Times New Roman',serif" font-weight="700" font-size="76" fill="${navy}">N</text>
-  <ellipse cx="46" cy="55" rx="42" ry="15.5" transform="rotate(-13 46 55)" stroke="url(#nxGold${theme})" stroke-width="4.6" fill="none"
-    pathLength="100" stroke-dasharray="0 59 37 4" stroke-linecap="round"/>
-  <path d="M37.6 71.9C34.3 60.4 41.9 49.7 50 45.6l5.9 6.4c-2.2 10.4-8.7 18.6-16 21z" fill="${gold}" stroke="${goldDeep}" stroke-width=".8"/>
-  <path d="M43.4 61.4 38.9 69.6" stroke="${goldDeep}" stroke-width="1.6" stroke-linecap="round"/>
-  <circle cx="45.3" cy="56.3" r="2.2" fill="${holeFill}"/>
+  <path d="M56.5 6.5h19.4L88.5 19v27H56.5z" fill="${ink}"/>
+  <path d="M75.9 6.5V19h12.6z" fill="${fold}"/>
+  <path d="M63.5 29h16M63.5 35.5h16M63.5 42h9" stroke="${docLine}" stroke-width="3.4" stroke-linecap="round"/>
+  <ellipse cx="46" cy="57" rx="41.5" ry="14.8" transform="rotate(-13.5 46 57)" stroke="url(#${id})" stroke-width="4.8" fill="none"/>
+  <text x="8" y="89.5" font-family="Georgia,'Times New Roman',serif" font-weight="700" font-size="77" fill="${ink}">N</text>
+  <ellipse cx="46" cy="57" rx="41.5" ry="14.8" transform="rotate(-13.5 46 57)" stroke="url(#${id})" stroke-width="4.8" fill="none"
+    pathLength="100" stroke-dasharray="0 55 41 4" stroke-linecap="round"/>
+  <path d="M37.4 72.3C34 60.6 41.9 49.6 50.2 45.4l6.1 6.6c-2.2 10.5-8.8 18.8-16.2 21.2z" fill="url(#${id})" stroke="${goldDeep}" stroke-width=".8"/>
+  <path d="M43.2 61.5 38.7 70" stroke="${goldDeep}" stroke-width="1.6" stroke-linecap="round"/>
+  <circle cx="45.2" cy="56.4" r="2.3" fill="${hole}"/>
 </svg>`;
 }
-const faviconSvg = encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><rect width="96" height="96" rx="18" fill="#102d50"/><path d="M58.5 12.5h20.6l8.4 8.6v23.4h-29z" fill="none" stroke="#F8F7F2" stroke-width="4.6" stroke-linejoin="round"/><path d="M66 28.5h13.5M66 35.5h13.5M66 42.5h9" stroke="#F8F7F2" stroke-width="3.7" stroke-linecap="round"/><text x="15" y="83" font-family="Georgia,'Times New Roman',serif" font-weight="700" font-size="62" fill="#F8F7F2">N</text><ellipse cx="48" cy="58" rx="41" ry="14.5" transform="rotate(-16 48 58)" stroke="#C5A45D" stroke-width="4" pathLength="100" stroke-dasharray="0 30 55 15" fill="none"/><path d="M36.5 75.5C33.4 62 42 49.5 50.6 45.3l7.2 6.6c-1.4 11.4-10.4 21.6-20 25.3z" fill="#C5A45D"/></svg>`);
+const faviconSvg = encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><rect width="96" height="96" rx="20" fill="#13294b"/><path d="M54 11h17l11 11v21H54z" fill="#f4f1e8"/><path d="M71 11v11h11z" fill="#cfc8b4"/><path d="M61 29h13M61 35h13" stroke="#13294b" stroke-width="3" stroke-linecap="round"/><text x="14" y="82" font-family="Georgia,'Times New Roman',serif" font-weight="700" font-size="56" fill="#f4f1e8">N</text><ellipse cx="47" cy="59" rx="39" ry="13.8" transform="rotate(-14 47 59)" stroke="#C5A45D" stroke-width="4.4" pathLength="100" stroke-dasharray="0 32 54 14" fill="none"/><path d="M37.5 74.5C34.7 62.5 42 51.5 49.8 47.8l6.3 6.6c-1.8 10.2-8.2 18.3-15.1 20.4z" fill="#C5A45D"/></svg>`);
 function insertFavicon() {
   if (!document.querySelector('link[rel="icon"]')) {
     const l = document.createElement('link');
@@ -75,7 +85,7 @@ const ICONS = {
 
 /* ---------- Helpers ---------- */
 function badgeClass(status) {
-  return { 'In Office': 'in-office', 'Submitted': 'submitted', 'Main Office': 'main-office', 'Others': 'others' }[status] || 'others';
+  return { 'For Submission': 'for-submission', 'Submitted': 'submitted' }[status] || 'for-submission';
 }
 function fmtDate(d) {
   if (!d) return '';
@@ -99,7 +109,7 @@ function toast(msg, isError) {
 }
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 async function api(url, opts = {}) {
-  const res = await fetch(url, opts);
+  const res = await fetch(url, { cache: 'no-store', ...opts });
   if (res.status === 401) { location.href = 'login.html'; throw new Error('unauthorized'); }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'Request failed');
@@ -172,7 +182,7 @@ const NAV_ADMIN = [
 const PAGE_TITLES = {
   dashboard: 'Dashboard', records: 'Notarization Records',
   'add-record': 'New Notarization Record', search: 'Search Records',
-  status: 'Status & Location Tracking', reports: 'Reports',
+  status: 'Document Status & Location', reports: 'Reports',
   users: 'Staff Accounts', 'document-types': 'Document Types', settings: 'Office Settings'
 };
 function userInitials(name) {
@@ -199,7 +209,7 @@ async function initShell() {
 
   sidebar.innerHTML = `
     <div class="brand">
-      <div class="brand-mark">${ICONS.scales}</div>
+      <div class="brand-mark">${notarixMark(40, 'dark')}</div>
       <span class="brand-name">NOTARIX</span>
       <span class="brand-rule"></span>
     </div>
@@ -258,7 +268,7 @@ async function initShell() {
 
     /* notifications: records waiting for submission */
     let pending = null;
-    try { pending = await api('/api/records?status=In Office&limit=4&page=1'); } catch {}
+    try { pending = await api('/api/records?status=' + encodeURIComponent('For Submission') + '&limit=4&page=1'); } catch {}
     const count = pending ? pending.total : 0;
     if (count === 0) bellDot.style.display = 'none';
     bellMenu.innerHTML = count === 0

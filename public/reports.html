@@ -86,27 +86,28 @@ document.getElementById('genBtn').insertAdjacentHTML('afterbegin', ICONS.report)
 document.getElementById('pdfBtn').insertAdjacentHTML('afterbegin', ICONS.file);
 document.getElementById('excelBtn').insertAdjacentHTML('afterbegin', ICONS.out);
 
-let chart, lastRows = [], lastTotals = null, lastPeriod = '';
+let chart, lastRows = [], lastTotals = null, lastPeriod = '', reqSeq = 0;
 document.getElementById('genBtn').addEventListener('click', loadReport);
 
 async function loadReport() {
   const month = +monthSel.value, year = +yearSel.value;
   const genBtn = document.getElementById('genBtn');
+  const token = ++reqSeq;           /* only the newest Generate wins the screen */
   genBtn.disabled = true;
   try {
-    var { rows, totals } = await api(`/api/report?month=${month}&year=${year}`);
+    var { rows, totals } = await api(`/api/report?month=${month}&year=${year}`, { cache: 'no-store' });
   } catch (err) { toast(err.message, true); genBtn.disabled = false; return; }
   genBtn.disabled = false;
+  if (token !== reqSeq) return;     /* a newer request already rendered */
   lastRows = rows; lastTotals = totals; lastPeriod = `${MONTHS_FULL[month - 1]} ${year}`;
   document.getElementById('periodLabel').textContent = lastPeriod;
 
   document.getElementById('placeholderCard').style.display = 'none';
   document.getElementById('reportContent').style.display = 'block';
   document.getElementById('summaryCards').innerHTML = `
-    <div class="stat"><span>Total Records</span><b>${(totals.total || 0).toLocaleString()}</b><em>${lastPeriod}</em></div>
-    <div class="stat"><span>In Office</span><b>${(totals.inOffice || 0).toLocaleString()}</b><em>Not yet submitted</em></div>
-    <div class="stat"><span>Submitted</span><b>${(totals.submitted || 0).toLocaleString()}</b><em>For filing</em></div>
-    <div class="stat"><span>Main Office</span><b>${(totals.mainOffice || 0).toLocaleString()}</b><em>At the main office</em></div>`;
+    <div class="stat lead"><span>Total Records</span><b>${(totals.total || 0).toLocaleString()}</b><em>${lastPeriod}</em></div>
+    <div class="stat"><span>For Submission</span><b>${(totals.forSubmission || 0).toLocaleString()}</b><em>At the Law Office</em></div>
+    <div class="stat"><span>Submitted</span><b>${(totals.submitted || 0).toLocaleString()}</b><em>At the Main Office</em></div>`;
 
   const tbody = document.getElementById('tbody');
   tbody.innerHTML = rows.length ? rows.map((r, i) => `

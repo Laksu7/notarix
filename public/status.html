@@ -23,12 +23,33 @@
       <p>Track where each notarized document currently is — update without editing the whole record.</p>
     </header>
 
-    <div class="tabs" id="tabs" style="margin-bottom:16px;"></div>
+    <div class="row track-tools">
+      <div class="tabs" id="tabs" style="margin:0;"></div>
+      <div class="search-box track-search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input class="input" id="trackSearch" placeholder="Search document number, type, or client name…">
+      </div>
+    </div>
+
+    <div class="bulk-bar card" id="bulkBar">
+      <span class="sel-count" id="selCount">0 selected</span>
+      <div class="bulk-field">
+        <label for="bulkStatus">New Status</label>
+        <select class="input" id="bulkStatus"><option value="">Choose status…</option></select>
+      </div>
+      <div class="bulk-field">
+        <label for="bulkLoc">Location (auto)</label>
+        <input class="input loc-auto" id="bulkLoc" placeholder="—" disabled>
+      </div>
+      <button class="btn btn-primary btn-sm" id="bulkApply" disabled>Apply to Selected</button>
+      <button class="btn btn-outline btn-sm" id="bulkClearSel" disabled>Clear Selection</button>
+    </div>
 
     <div class="card">
       <div class="table-wrap">
         <table>
           <thead><tr>
+            <th class="col-check"><input type="checkbox" id="checkAll" title="Select all displayed records"></th>
             <th>Document No.</th><th>Type</th><th>Client Name</th><th>Date Notarized</th>
             <th style="width:170px;">Status</th><th style="width:190px;">Location</th><th style="width:78px;">Actions</th>
           </tr></thead>
@@ -47,15 +68,19 @@
 <script src="js/app.js"></script>
 <script>
 initShell();
-let page = 1, activeStatus = '';
+let page = 1, activeStatus = '', search = '';
 const LIMIT = 10;
 const tbody = document.getElementById('tbody');
+const selected = new Set();   /* record ids checked — kept across pages and filters */
+
+document.getElementById('bulkStatus').innerHTML = `<option value="">Choose status…</option>` +
+  STATUSES.map(s => `<option>${s}</option>`).join('');
 
 async function loadCounts() {
   let all, per = {};
   try {
     all = await api('/api/records?limit=1&page=1');
-    for (const s of STATUSES) per[s] = (await api(`/api/records?status=${encodeURIComponent(s)}&limit=1&page=1`)).total;
+    for (const s of STATUSES) per[s] = (await api(`/api/records?status=${encodeURIComponent(s)}&limit=1&page=1&search=${encodeURIComponent(search)}`)).total;
   } catch (err) { return; }
   const tabs = [['', all.total], ...STATUSES.map(s => [s, per[s]])];
   document.getElementById('tabs').innerHTML = tabs.map(([key, n]) =>
@@ -68,17 +93,104 @@ async function loadCounts() {
   }));
 }
 
+function updateSelectionUI() {
+  const n = selected.size;
+  const hasStatus = !!document.getElementById('bulkStatus').value;
+  document.getElementById('selCount').textContent = `${n} selected`;
+  /* Apply arms only when something is selected AND a new status is chosen */
+  document.getElementById('bulkApply').disabled = !n || !hasStatus;
+  document.getElementById('bulkClearSel').disabled = !n;
+}
+
+/* ---- Bulk update: one status (and its matching location) for every selected record ---- */
+document.getElementById('bulkStatus').addEventListener('change', e => {
+  document.getElementById('bulkLoc').value = STATUS_LOCATION[e.target.value] || '';
+  updateSelectionUI();
+});
+document.getElementById('bulkClearSel').addEventListener('click', () => {
+  selected.clear();
+  tbody.querySelectorAll('.row-check').forEach(c => {
+    c.checked = false; c.closest('tr').classList.remove('row-selected');
+  });
+  syncCheckAll(); updateSelectionUI();
+});
+document.getElementById('bulkApply').addEventListener('click', async () => {
+  const btn = document.getElementById('bulkApply');
+  if (!selected.size) return toast('Select at least one record first', true);
+  const status = document.getElementById('bulkStatus').value;
+  if (!status) return toast('Choose the new status before applying', true);
+  const n = selected.size;
+  const ok = await confirmAction({
+    title: `Update ${n} selected record${n > 1 ? 's' : ''}?`,
+    message: `Status will be set to "${status}" and the location to "${STATUS_LOCATION[status]}" for every selected document.`,
+    confirmText: 'Update records', danger: false
+  });
+  if (!ok) return;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>&nbsp; Updating…';
+  try {
+    const res = await api('/api/records/bulk-track', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [...selected], status })
+    });
+    toast(`${res.updated} record${res.updated === 1 ? '' : 's'} updated — "${res.status}" · ${res.location}`);
+    selected.clear();
+    document.getElementById('bulkStatus').value = '';
+    document.getElementById('bulkLoc').value = '';
+    updateSelectionUI();
+    loadCounts(); load();
+  } catch (err) {
+    toast(err.message, true);
+    updateSelectionUI();
+  }
+  btn.textContent = 'Apply to Selected';
+});
+
+/* ---- row checkboxes + select-all (selects the records currently displayed) ---- */
+function syncCheckAll() {
+  const boxes = [...tbody.querySelectorAll('.row-check')];
+  const all = document.getElementById('checkAll');
+  all.disabled = boxes.length === 0;
+  const checked = boxes.filter(b => b.checked).length;
+  all.checked = boxes.length > 0 && checked === boxes.length;
+  all.indeterminate = checked > 0 && checked < boxes.length;
+}
+document.getElementById('checkAll').addEventListener('change', e => {
+  const on = e.target.checked;
+  tbody.querySelectorAll('.row-check').forEach(c => {
+    c.checked = on;
+    const id = +c.dataset.id;
+    if (on) selected.add(id); else selected.delete(id);
+    c.closest('tr').classList.toggle('row-selected', on);
+  });
+  syncCheckAll(); updateSelectionUI();
+});
+
+/* ---- search: document number / document type / client name ---- */
+let searchTimer;
+function applySearch(v) { search = v.trim(); page = 1; load(); }
+document.getElementById('trackSearch').addEventListener('input', e => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => applySearch(e.target.value), 320);
+});
+document.getElementById('trackSearch').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); clearTimeout(searchTimer); applySearch(e.target.value); }
+});
+
 async function load() {
   tbody.innerHTML = skeletonRows(7);
+  document.getElementById('checkAll').disabled = true;
   let data;
   try {
-    data = await api(`/api/records?status=${encodeURIComponent(activeStatus)}&page=${page}&limit=${LIMIT}`);
+    data = await api(`/api/records?status=${encodeURIComponent(activeStatus)}&search=${encodeURIComponent(search)}&page=${page}&limit=${LIMIT}`);
   } catch (err) {
     tbody.innerHTML = stateRow('Could not load records', '<div style="margin-bottom:6px;">⚠️</div>');
+    syncCheckAll();
     return;
   }
   tbody.innerHTML = data.rows.length ? data.rows.map(r => `
-    <tr>
+    <tr class="${selected.has(+r.id) ? 'row-selected' : ''}">
+      <td class="col-check"><input type="checkbox" class="row-check" data-id="${r.id}" ${selected.has(+r.id) ? 'checked' : ''}></td>
       <td><span class="doc-no">${esc(r.doc_number)}</span></td>
       <td>${esc(r.doc_type)}</td>
       <td>${esc(r.client_name)}</td>
@@ -89,14 +201,15 @@ async function load() {
         </select>
       </td>
       <td>
-        <input class="input loc-input" data-id="${r.id}" value="${esc(r.location || r.status)}"
-          placeholder="e.g. Main Office" style="font-size:13px;padding:6px 10px;">
+        <input class="input loc-auto" data-id="${r.id}" value="${esc(STATUS_LOCATION[r.status] || r.location || '')}"
+          title="Location follows the status" disabled>
       </td>
       <td><div class="actions">
         <a class="icon-btn" title="Edit record" href="add-record.html?id=${r.id}">${ICONS.edit}</a>
       </div></td>
     </tr>`).join('')
-    : stateRow('No documents with this status', ICONS.inbox.replace('viewBox', 'width="30" height="30" viewBox'));
+    : stateRow(search ? 'No records match your search' : 'No documents with this status',
+      ICONS.inbox.replace('viewBox', 'width="30" height="30" viewBox'));
 
   const from = data.total === 0 ? 0 : (data.page - 1) * LIMIT + 1;
   const to = Math.min(data.page * LIMIT, data.total);
@@ -112,31 +225,28 @@ async function load() {
     div.querySelectorAll('button:not([disabled])').forEach(b => b.addEventListener('click', () => { page = +b.dataset.page; load(); }));
   } else div.innerHTML = '';
 
-  /* inline updates via the tracking endpoint */
+  /* checkboxes for the rows just rendered — ticked ones come from earlier pages */
+  tbody.querySelectorAll('.row-check').forEach(c => c.addEventListener('change', () => {
+    const id = +c.dataset.id;
+    c.checked ? selected.add(id) : selected.delete(id);
+    c.closest('tr').classList.toggle('row-selected', c.checked);
+    syncCheckAll(); updateSelectionUI();
+  }));
+  syncCheckAll(); updateSelectionUI();
+
+  /* inline status update via the tracking endpoint — the location follows automatically */
   tbody.querySelectorAll('.status-select').forEach(sel => sel.addEventListener('change', async () => {
     try {
       const res = await api(`/api/records/${sel.dataset.id}/track`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: sel.value })
       });
-      toast(`Status updated to "${res.status}"`);
+      const locInput = tbody.querySelector(`.loc-auto[data-id="${sel.dataset.id}"]`);
+      if (locInput) locInput.value = res.location;
+      toast(`Status updated to "${res.status}" · ${res.location}`);
       loadCounts();
     } catch (err) { toast(err.message, true); }
   }));
-  tbody.querySelectorAll('.loc-input').forEach(inp => {
-    const save = async () => {
-      try {
-        const res = await api(`/api/records/${inp.dataset.id}/track`, {
-          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ location: inp.value })
-        });
-        inp.value = res.location;
-        toast(`Location updated to "${res.location}"`);
-      } catch (err) { toast(err.message, true); }
-    };
-    inp.addEventListener('blur', save);
-    inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } });
-  });
 }
 loadCounts().then(load);
 </script>

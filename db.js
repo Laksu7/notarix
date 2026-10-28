@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS records (
   doc_type TEXT NOT NULL,
   client_name TEXT NOT NULL,
   date_notarized TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'In Office',
+  status TEXT NOT NULL DEFAULT 'For Submission',
   remarks TEXT,
   file_name TEXT,
   file_path TEXT,
@@ -55,9 +55,28 @@ CREATE TABLE IF NOT EXISTS email_codes (
 (function migrate() {
   const cols = db.prepare('PRAGMA table_info(records)').all().map(c => c.name);
   if (!cols.includes('location')) {
-    db.exec('ALTER TABLE records ADD COLUMN location TEXT');
+    db.exec('ALTER TABLE records ADD COLUMN location TEXT DEFAULT \'Law Office\'');
     db.exec("UPDATE records SET location = status WHERE location IS NULL");
   }
+})();
+
+/* Workflow normalization: the office uses exactly two statuses, and each
+   status always corresponds to one location. Existing records are relabelled,
+   never removed:
+     In Office  -> For Submission -> Law Office
+     Main Office (old status) -> Submitted -> Main Office
+     Others -> For Submission  -> Law Office
+     Submitted is kept, with its location standardized to Main Office. */
+(function normalizeWorkflow() {
+  db.exec("UPDATE records SET status = TRIM(status) WHERE status != TRIM(status)");
+  db.exec("UPDATE records SET location = TRIM(location) WHERE location IS NOT NULL AND location != TRIM(location)");
+  /* casing fix so "submitted" / "SUBMITTED" become the canonical value */
+  db.exec("UPDATE records SET status = 'Submitted' WHERE status != 'Submitted' AND UPPER(TRIM(status)) = 'SUBMITTED'");
+  /* every remaining legacy value becomes For Submission */
+  db.exec("UPDATE records SET status = 'For Submission' WHERE status NOT IN ('For Submission', 'Submitted')");
+  /* location follows the status */
+  db.exec("UPDATE records SET location = 'Law Office' WHERE status = 'For Submission' AND (location IS NULL OR location != 'Law Office')");
+  db.exec("UPDATE records SET location = 'Main Office' WHERE status = 'Submitted' AND (location IS NULL OR location != 'Main Office')");
 })();
 
 function seed() {

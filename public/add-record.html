@@ -51,13 +51,8 @@
           </div>
           <div class="field">
             <label>Location</label>
-            <input class="input" id="location" placeholder="e.g. Law Office, Main Office" list="locations">
-            <datalist id="locations">
-              <option value="Law Office"></option>
-              <option value="Main Office"></option>
-              <option value="Others"></option>
-            </datalist>
-            <div style="font-size:11.5px;color:var(--muted);margin-top:4px;">Where the document is physically kept. Defaults to its status.</div>
+            <input class="input loc-auto" id="location" disabled title="Location follows the status">
+            <div style="font-size:11.5px;color:var(--muted);margin-top:4px;">Set automatically from the Status chosen above.</div>
           </div>
         </div>
         <div class="field">
@@ -83,9 +78,6 @@
       <div class="card">
         <div class="card-title" style="font-size:16.5px;">Document Preview</div>
         <div class="preview-card" id="previewCard" style="margin-top:12px;min-height:250px;display:flex;flex-direction:column;justify-content:center;gap:3px;"></div>
-        <div style="font-size:12px;color:var(--muted);margin-top:12px;line-height:1.6;">
-          <b style="color:var(--ink);">Before saving</b> — the system checks whether the document number has already been recorded. Numbers already on file cannot be saved again.
-        </div>
       </div>
     </div>
   </div>
@@ -96,7 +88,6 @@
 <script>
 initShell();
 
-document.getElementById('status').innerHTML = STATUSES.map(s => `<option>${s}</option>`).join('');
 (function () { const d = new Date(); document.getElementById('dateNotarized').value =
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
 
@@ -108,6 +99,14 @@ let typesReady = api('/api/doc-types').then(types => {
   return types;
 });
 
+/* Location always follows the status: For Submission = Law Office, Submitted = Main Office */
+const statusEl = document.getElementById('status');
+const locationEl = document.getElementById('location');
+function syncLocation() { locationEl.value = STATUS_LOCATION[statusEl.value] || ''; }
+statusEl.innerHTML = STATUSES.map(s => `<option>${s}</option>`).join('');
+statusEl.addEventListener('change', syncLocation);
+syncLocation();
+
 if (editId) {
   document.getElementById('pageTitle').textContent = 'Edit Notarization Record';
   document.getElementById('pageSub').textContent = 'Correct miswritten information or update the record.';
@@ -118,8 +117,8 @@ if (editId) {
       document.getElementById('docType').value = r.doc_type;
       document.getElementById('clientName').value = r.client_name;
       document.getElementById('dateNotarized').value = r.date_notarized;
-      document.getElementById('status').value = r.status;
-      document.getElementById('location').value = r.location || '';
+      statusEl.value = STATUSES.includes(r.status) ? r.status : STATUSES[0];
+      syncLocation();
       document.getElementById('remarks').value = r.remarks || '';
       updatePreviewName();
     });

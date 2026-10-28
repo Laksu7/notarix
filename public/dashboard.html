@@ -39,12 +39,12 @@
           <div class="stat">
             <span>For Submission</span>
             <b id="stForSub" class="num">···</b>
-            <em>Pending submission</em>
+            <em>Waiting at the Law Office</em>
           </div>
           <div class="stat">
             <span>Submitted</span>
             <b id="stSubmitted" class="num">···</b>
-            <em>To central records</em>
+            <em>Filed at the Main Office</em>
           </div>
         </div>
 
@@ -147,9 +147,18 @@ document.getElementById('tmSub').textContent = period;
     const delta = s.thisMonth - s.lastMonth;
     const dEl = document.getElementById('stDelta');
     dEl.style.display = 'inline-flex';
-    if (delta > 0) dEl.innerHTML = `${ICONS.arrowUp}+${delta} from ${prevMonthName}`;
-    else if (delta < 0) dEl.textContent = `${Math.abs(delta)} fewer than ${prevMonthName}`;
-    else dEl.textContent = `No change from ${prevMonthName}`;
+    if (delta > 0) {
+      dEl.classList.add('up');
+      dEl.innerHTML = `${ICONS.arrowUp}<span>${delta} more than ${prevMonthName}</span>`;
+      dEl.title = `${s.thisMonth} recorded in ${period} · ${s.lastMonth} in ${prevMonthName}`;
+    } else if (delta < 0) {
+      dEl.classList.add('down');
+      dEl.innerHTML = `<span>${Math.abs(delta)} fewer than ${prevMonthName}</span>`;
+      dEl.title = `${s.thisMonth} recorded in ${period} · ${s.lastMonth} in ${prevMonthName}`;
+    } else {
+      dEl.textContent = `Same as ${prevMonthName}`;
+      dEl.title = `${s.thisMonth} in both ${period} and ${prevMonthName}`;
+    }
 
     const tbody = document.querySelector('#tmTable tbody');
     if (!s.typeSummary.length) {

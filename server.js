@@ -22,7 +22,22 @@ app.use(session({
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use(express.static(path.join(__dirname, 'public')));
 
-const ALLOWED_STATUSES = ['In Office', 'Submitted', 'Main Office', 'Others'];
+/* The office workflow has exactly two statuses; each one implies a location */
+const ALLOWED_STATUSES = ['For Submission', 'Submitted'];
+const STATUS_LOCATION = { 'For Submission': 'Law Office', 'Submitted': 'Main Office' };
+/* Tolerate stale pages / old labels: map them to the canonical two */
+const STATUS_ALIASES = {
+  'FOR SUBMISSION': 'For Submission',
+  'IN OFFICE': 'For Submission',
+  'MAIN OFFICE': 'Submitted',
+  'OTHERS': 'For Submission',
+  'SUBMITTED': 'Submitted'
+};
+function canonicalStatus(value) {
+  const raw = String(value || '').trim();
+  if (ALLOWED_STATUSES.includes(raw)) return raw;
+  return STATUS_ALIASES[raw.toUpperCase()] || null;
+}
 
 /* ---------------- Auth ---------------- */
 app.post('/api/auth/login', (req, res) => {
@@ -81,12 +96,12 @@ const upload = multer({
 });
 
 function validateRecord(body, excludeId = 0) {
-  const { doc_number, doc_type, client_name, date_notarized, status } = body;
+  const { doc_number, doc_type, client_name, date_notarized } = body;
   if (!doc_number || !String(doc_number).trim()) return 'Document Number is required';
   if (!doc_type) return 'Document Type is required';
   if (!client_name || !String(client_name).trim()) return 'Client Name is required';
   if (!date_notarized) return 'Date Notarized is required';
-  if (!ALLOWED_STATUSES.includes(status)) return 'Invalid Status';
+  if (!canonicalStatus(body.status)) return 'Invalid Status';
   const dup = db.prepare('SELECT id FROM records WHERE doc_number = ? AND id != ?')
     .get(String(doc_number).trim(), excludeId);
   if (dup) return 'This Document Number has already been recorded';
@@ -126,12 +141,13 @@ app.post('/api/records', requireAuth, upload.single('document'), (req, res) => {
   const err = validateRecord(req.body);
   if (err) return res.status(409).json({ error: err });
   const f = req.file;
-  const location = (req.body.location || '').trim() || req.body.status;
+  const status = canonicalStatus(req.body.status);
+  const location = STATUS_LOCATION[status];
   const info = db.prepare(`INSERT INTO records
     (doc_number, doc_type, client_name, date_notarized, status, location, remarks, file_name, file_path, file_size)
     VALUES (?,?,?,?,?,?,?,?,?,?)`)
     .run(req.body.doc_number.trim(), req.body.doc_type, req.body.client_name.trim(),
-      req.body.date_notarized, req.body.status, location, req.body.remarks || null,
+      req.body.date_notarized, status, location, req.body.remarks || null,
       f ? f.originalname : null, f ? '/uploads/' + f.filename : null, f ? f.size : null);
   res.json({ id: info.lastInsertRowid });
 });
@@ -142,12 +158,13 @@ app.put('/api/records/:id', requireAuth, upload.single('document'), (req, res) =
   const err = validateRecord(req.body, existing.id);
   if (err) return res.status(409).json({ error: err });
   const f = req.file;
-  const location = (req.body.location || '').trim() || req.body.status;
+  const status = canonicalStatus(req.body.status);
+  const location = STATUS_LOCATION[status];
   db.prepare(`UPDATE records SET doc_number=?, doc_type=?, client_name=?, date_notarized=?,
     status=?, location=?, remarks=?, file_name=?, file_path=?, file_size=?, updated_at=datetime('now')
     WHERE id=?`)
     .run(req.body.doc_number.trim(), req.body.doc_type, req.body.client_name.trim(),
-      req.body.date_notarized, req.body.status, location, req.body.remarks || null,
+      req.body.date_notarized, status, location, req.body.remarks || null,
       f ? f.originalname : existing.file_name,
       f ? '/uploads/' + f.filename : existing.file_path,
       f ? f.size : existing.file_size,
@@ -155,16 +172,33 @@ app.put('/api/records/:id', requireAuth, upload.single('document'), (req, res) =
   res.json({ ok: true });
 });
 
-/* Quick status / location tracking without resubmitting the whole record */
+/* Quick status / location tracking without resubmitting the whole record.
+   The location always follows the status (For Submission = Law Office,
+   Submitted = Main Office), so callers only send the status. */
 app.patch('/api/records/:id/track', requireAuth, (req, res) => {
   const existing = db.prepare('SELECT * FROM records WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Record not found' });
-  const status = ('status' in req.body ? req.body.status : existing.status);
-  if (!ALLOWED_STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid Status' });
-  const location = ('location' in req.body ? (req.body.location || '').trim() : (existing.location || '')) || status;
+  const status = canonicalStatus('status' in req.body ? req.body.status : existing.status);
+  if (!status) return res.status(400).json({ error: 'Invalid Status' });
+  const location = STATUS_LOCATION[status];
   db.prepare(`UPDATE records SET status = ?, location = ?, updated_at = datetime('now') WHERE id = ?`)
     .run(status, location, existing.id);
   res.json({ ok: true, status, location });
+});
+
+/* Bulk update: set the same status (and its matching location) on many
+   records at once — e.g. 20 documents sent to the Main Office. */
+app.post('/api/records/bulk-track', requireAuth, (req, res) => {
+  const ids = Array.isArray(req.body.ids) ? req.body.ids.map(v => +v).filter(Number.isInteger) : [];
+  if (!ids.length) return res.status(400).json({ error: 'Select at least one record to update' });
+  if (ids.length > 500) return res.status(400).json({ error: 'Too many records selected — please update in smaller batches' });
+  const status = canonicalStatus(req.body.status);
+  if (!status) return res.status(400).json({ error: 'Invalid Status' });
+  const location = STATUS_LOCATION[status];
+  const placeholders = ids.map(() => '?').join(',');
+  const info = db.prepare(`UPDATE records SET status = ?, location = ?, updated_at = datetime('now')
+    WHERE id IN (${placeholders})`).run(status, location, ...ids);
+  res.json({ ok: true, updated: info.changes, status, location });
 });
 
 app.delete('/api/records/:id', requireAuth, (req, res) => {
@@ -176,14 +210,18 @@ app.delete('/api/records/:id', requireAuth, (req, res) => {
 app.get('/api/stats', requireAuth, (req, res) => {
   const year = +req.query.year || new Date().getFullYear();
   const now = new Date();
-  const firstOfMonth = now.toISOString().slice(0, 8) + '01';
-  const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const firstOfPrevMonth = prev.toISOString().slice(0, 8) + '01';
+  /* local calendar months (toISOString is UTC and shifts the boundary in UTC+ timezones) */
+  const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const firstOfMonth = ymd(new Date(now.getFullYear(), now.getMonth(), 1));
+  const firstOfNextMonth = ymd(new Date(now.getFullYear(), now.getMonth() + 1, 1));
+  const firstOfPrevMonth = ymd(new Date(now.getFullYear(), now.getMonth() - 1, 1));
   const total = db.prepare('SELECT COUNT(*) c FROM records').get().c;
-  const thisMonth = db.prepare('SELECT COUNT(*) c FROM records WHERE date_notarized >= ?').get(firstOfMonth).c;
+  /* records dated inside the current calendar month vs the previous one */
+  const thisMonth = db.prepare('SELECT COUNT(*) c FROM records WHERE date_notarized >= ? AND date_notarized < ?')
+    .get(firstOfMonth, firstOfNextMonth).c;
   const lastMonth = db.prepare('SELECT COUNT(*) c FROM records WHERE date_notarized >= ? AND date_notarized < ?')
     .get(firstOfPrevMonth, firstOfMonth).c;
-  const forSubmission = db.prepare("SELECT COUNT(*) c FROM records WHERE status = 'In Office'").get().c;
+  const forSubmission = db.prepare("SELECT COUNT(*) c FROM records WHERE status = 'For Submission'").get().c;
   const submitted = db.prepare("SELECT COUNT(*) c FROM records WHERE status = 'Submitted'").get().c;
   // Where the submitted files are currently kept (top location)
   const topLoc = db.prepare(`SELECT location l, COUNT(*) c FROM records
@@ -210,15 +248,14 @@ app.get('/api/stats', requireAuth, (req, res) => {
 app.get('/api/report', requireAuth, (req, res) => {
   const month = +req.query.month || (new Date().getMonth() + 1);
   const year = +req.query.year || new Date().getFullYear();
-  const mm = String(month).padStart(2, '0');
+  const mm = Math.min(12, Math.max(1, month));
   const rows = db.prepare(`SELECT * FROM records
-    WHERE substr(date_notarized, 1, 7) = ? ORDER BY date_notarized ASC, id ASC`).all(`${year}-${mm}`);
+    WHERE substr(date_notarized, 1, 7) = ? ORDER BY date_notarized ASC, id ASC`).all(`${year}-${String(mm).padStart(2, '0')}`);
   const totals = db.prepare(`SELECT COUNT(*) total,
-    SUM(CASE WHEN status='In Office' THEN 1 ELSE 0 END) inOffice,
-    SUM(CASE WHEN status='Submitted' THEN 1 ELSE 0 END) submitted,
-    SUM(CASE WHEN status='Main Office' THEN 1 ELSE 0 END) mainOffice
-    FROM records WHERE substr(date_notarized, 1, 7) = ?`).get(`${year}-${mm}`);
-  res.json({ rows, totals, month, year });
+    SUM(CASE WHEN status='For Submission' THEN 1 ELSE 0 END) forSubmission,
+    SUM(CASE WHEN status='Submitted' THEN 1 ELSE 0 END) submitted
+    FROM records WHERE substr(date_notarized, 1, 7) = ?`).get(`${year}-${String(mm).padStart(2, '0')}`);
+  res.json({ rows, totals, month: mm, year });
 });
 
 /* ---------------- Document Types ---------------- */
