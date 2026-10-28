@@ -187,12 +187,13 @@ td .loc { color: var(--muted); font-size: 13px; }
 .track-tools .tabs { flex: 1 1 auto; }
 .track-tools .track-search { flex: 0 1 320px; min-width: 230px; max-width: 360px; }
 
-.bulk-bar { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; padding: 13px 16px; margin-bottom: 14px; }
+.bulk-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 13px 16px; margin-bottom: 14px; }
 .bulk-bar .sel-count { background: #f4efe1; border: 1px solid var(--line-soft); color: #6b5c2d; font-size: 12.5px; font-weight: 700; padding: 6px 13px; border-radius: 99px; white-space: nowrap; font-variant-numeric: tabular-nums; align-self: center; }
-.bulk-bar .bulk-field label { display: block; font-size: 10.5px; font-weight: 600; color: var(--muted); letter-spacing: .4px; text-transform: uppercase; margin-bottom: 4px; }
-.bulk-bar .bulk-field .input { width: 200px; height: 34px; font-size: 13px; }
+.bulk-bar .bulk-actions { margin-left: auto; display: flex; gap: 9px; flex-wrap: wrap; }
 .bulk-bar .btn { height: 34px; }
 .bulk-bar .btn:disabled { opacity: .45; cursor: not-allowed; }
+.bulk-modal-field { margin-bottom: 12px; }
+.bulk-modal-field label { display: block; font-size: 10.5px; font-weight: 600; color: var(--muted); letter-spacing: .4px; text-transform: uppercase; margin-bottom: 4px; }
 
 .col-check { width: 34px; text-align: center; }
 input.row-check, #checkAll { width: 15px; height: 15px; accent-color: #20514a; cursor: pointer; }

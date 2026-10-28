@@ -187,7 +187,10 @@ app.patch('/api/records/:id/track', requireAuth, (req, res) => {
 });
 
 /* Bulk update: set the same status (and its matching location) on many
-   records at once — e.g. 20 documents sent to the Main Office. */
+   records at once — e.g. 20 documents sent to the Main Office.
+   Runs inside a transaction: every selected record is updated together
+   (all-or-nothing) and the location is always derived from the status
+   on the server, never trusted from the client. */
 app.post('/api/records/bulk-track', requireAuth, (req, res) => {
   const ids = Array.isArray(req.body.ids) ? req.body.ids.map(v => +v).filter(Number.isInteger) : [];
   if (!ids.length) return res.status(400).json({ error: 'Select at least one record to update' });
@@ -196,9 +199,16 @@ app.post('/api/records/bulk-track', requireAuth, (req, res) => {
   if (!status) return res.status(400).json({ error: 'Invalid Status' });
   const location = STATUS_LOCATION[status];
   const placeholders = ids.map(() => '?').join(',');
-  const info = db.prepare(`UPDATE records SET status = ?, location = ?, updated_at = datetime('now')
-    WHERE id IN (${placeholders})`).run(status, location, ...ids);
-  res.json({ ok: true, updated: info.changes, status, location });
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const info = db.prepare(`UPDATE records SET status = ?, location = ?, updated_at = datetime('now')
+      WHERE id IN (${placeholders})`).run(status, location, ...ids);
+    db.exec('COMMIT');
+    res.json({ ok: true, updated: info.changes, status, location });
+  } catch (err) {
+    db.exec('ROLLBACK');
+    res.status(500).json({ error: 'Bulk update failed — nothing was changed' });
+  }
 });
 
 app.delete('/api/records/:id', requireAuth, (req, res) => {

@@ -33,16 +33,10 @@
 
     <div class="bulk-bar card" id="bulkBar">
       <span class="sel-count" id="selCount">0 selected</span>
-      <div class="bulk-field">
-        <label for="bulkStatus">New Status</label>
-        <select class="input" id="bulkStatus"><option value="">Choose status…</option></select>
+      <div class="bulk-actions">
+        <button class="btn btn-primary btn-sm" id="bulkOpen" disabled>Bulk Update</button>
+        <button class="btn btn-outline btn-sm" id="bulkClearSel" disabled>Clear Selection</button>
       </div>
-      <div class="bulk-field">
-        <label for="bulkLoc">Location (auto)</label>
-        <input class="input loc-auto" id="bulkLoc" placeholder="—" disabled>
-      </div>
-      <button class="btn btn-primary btn-sm" id="bulkApply" disabled>Apply to Selected</button>
-      <button class="btn btn-outline btn-sm" id="bulkClearSel" disabled>Clear Selection</button>
     </div>
 
     <div class="card">
@@ -65,6 +59,28 @@
 </main>
 
 <div id="toast"></div>
+
+<!-- Bulk Update dialog: choose status → location fills automatically → confirm -->
+<div class="modal-overlay" id="bulkOverlay">
+  <div class="modal modal-confirm">
+    <div id="bulkIcon" style="width:40px;height:40px;border-radius:50%;background:rgba(197,164,93,.16);color:var(--navy);display:flex;align-items:center;justify-content:center;margin-bottom:12px;"></div>
+    <h3>Bulk Update</h3>
+    <p id="bulkSummary"></p>
+    <div class="bulk-modal-field">
+      <label for="modalStatus">New Status</label>
+      <select class="input" id="modalStatus"><option value="">Choose status…</option></select>
+    </div>
+    <div class="bulk-modal-field">
+      <label for="modalLoc">Location (auto)</label>
+      <input class="input loc-auto" id="modalLoc" placeholder="—" disabled>
+    </div>
+    <div style="display:flex;gap:9px;justify-content:flex-end;margin-top:18px;">
+      <button type="button" class="btn btn-outline" id="bulkCancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="bulkConfirm" disabled>Update records</button>
+    </div>
+  </div>
+</div>
+
 <script src="js/app.js"></script>
 <script>
 initShell();
@@ -73,8 +89,9 @@ const LIMIT = 10;
 const tbody = document.getElementById('tbody');
 const selected = new Set();   /* record ids checked — kept across pages and filters */
 
-document.getElementById('bulkStatus').innerHTML = `<option value="">Choose status…</option>` +
+document.getElementById('modalStatus').innerHTML = `<option value="">Choose status…</option>` +
   STATUSES.map(s => `<option>${s}</option>`).join('');
+document.getElementById('bulkIcon').innerHTML = ICONS.doc;
 
 async function loadCounts() {
   let all, per = {};
@@ -95,18 +112,32 @@ async function loadCounts() {
 
 function updateSelectionUI() {
   const n = selected.size;
-  const hasStatus = !!document.getElementById('bulkStatus').value;
   document.getElementById('selCount').textContent = `${n} selected`;
-  /* Apply arms only when something is selected AND a new status is chosen */
-  document.getElementById('bulkApply').disabled = !n || !hasStatus;
+  /* Bulk Update arms as soon as something is selected — the status is chosen inside the dialog */
+  document.getElementById('bulkOpen').disabled = !n;
   document.getElementById('bulkClearSel').disabled = !n;
 }
 
-/* ---- Bulk update: one status (and its matching location) for every selected record ---- */
-document.getElementById('bulkStatus').addEventListener('change', e => {
-  document.getElementById('bulkLoc').value = STATUS_LOCATION[e.target.value] || '';
-  updateSelectionUI();
+/* ---- Bulk Update dialog: select records → Bulk Update → choose status → confirm ---- */
+const bulkOverlay = document.getElementById('bulkOverlay');
+const modalStatus = document.getElementById('modalStatus');
+const modalLoc = document.getElementById('modalLoc');
+modalStatus.addEventListener('change', () => {
+  modalLoc.value = STATUS_LOCATION[modalStatus.value] || '';
+  document.getElementById('bulkConfirm').disabled = !modalStatus.value;
 });
+document.getElementById('bulkOpen').addEventListener('click', () => {
+  if (!selected.size) return toast('Select at least one record first', true);
+  const n = selected.size;
+  document.getElementById('bulkSummary').textContent =
+    `${n} record${n > 1 ? 's are' : ' is'} selected. Choose the new status — the matching location is set automatically.`;
+  modalStatus.value = ''; modalLoc.value = '';
+  document.getElementById('bulkConfirm').disabled = true;
+  bulkOverlay.classList.add('open');
+});
+const closeBulk = () => bulkOverlay.classList.remove('open');
+document.getElementById('bulkCancel').addEventListener('click', closeBulk);
+bulkOverlay.addEventListener('click', e => { if (e.target === bulkOverlay) closeBulk(); });
 document.getElementById('bulkClearSel').addEventListener('click', () => {
   selected.clear();
   tbody.querySelectorAll('.row-check').forEach(c => {
@@ -114,18 +145,10 @@ document.getElementById('bulkClearSel').addEventListener('click', () => {
   });
   syncCheckAll(); updateSelectionUI();
 });
-document.getElementById('bulkApply').addEventListener('click', async () => {
-  const btn = document.getElementById('bulkApply');
-  if (!selected.size) return toast('Select at least one record first', true);
-  const status = document.getElementById('bulkStatus').value;
-  if (!status) return toast('Choose the new status before applying', true);
-  const n = selected.size;
-  const ok = await confirmAction({
-    title: `Update ${n} selected record${n > 1 ? 's' : ''}?`,
-    message: `Status will be set to "${status}" and the location to "${STATUS_LOCATION[status]}" for every selected document.`,
-    confirmText: 'Update records', danger: false
-  });
-  if (!ok) return;
+document.getElementById('bulkConfirm').addEventListener('click', async () => {
+  const btn = document.getElementById('bulkConfirm');
+  const status = modalStatus.value;
+  if (!status) return toast('Choose the new status first', true);
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>&nbsp; Updating…';
   try {
@@ -133,17 +156,16 @@ document.getElementById('bulkApply').addEventListener('click', async () => {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: [...selected], status })
     });
+    closeBulk();
     toast(`${res.updated} record${res.updated === 1 ? '' : 's'} updated — "${res.status}" · ${res.location}`);
     selected.clear();
-    document.getElementById('bulkStatus').value = '';
-    document.getElementById('bulkLoc').value = '';
     updateSelectionUI();
     loadCounts(); load();
   } catch (err) {
     toast(err.message, true);
-    updateSelectionUI();
   }
-  btn.textContent = 'Apply to Selected';
+  btn.disabled = false;
+  btn.textContent = 'Update records';
 });
 
 /* ---- row checkboxes + select-all (selects the records currently displayed) ---- */

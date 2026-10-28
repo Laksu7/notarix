@@ -3,6 +3,9 @@ const bcrypt = require('bcryptjs');
 
 const db = new DatabaseSync('notarium.db');
 db.exec('PRAGMA journal_mode = WAL');
+/* Wait politely for a lock instead of failing instantly when another
+   instance of the app (or a backup) holds the database for a moment. */
+db.exec('PRAGMA busy_timeout = 8000');
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS users (
@@ -68,15 +71,32 @@ CREATE TABLE IF NOT EXISTS email_codes (
      Others -> For Submission  -> Law Office
      Submitted is kept, with its location standardized to Main Office. */
 (function normalizeWorkflow() {
-  db.exec("UPDATE records SET status = TRIM(status) WHERE status != TRIM(status)");
-  db.exec("UPDATE records SET location = TRIM(location) WHERE location IS NOT NULL AND location != TRIM(location)");
+  /* Small retry helper: if another instance holds a write lock at the same
+     moment (e.g. two servers sharing this database), wait and try again
+     instead of crashing on boot. */
+  const withRetry = (fn, tries = 20) => {
+    for (let i = 0; i < tries; i++) {
+      try { return fn(); }
+      catch (err) {
+        if (err && (err.code === 'ERR_SQLITE_ERROR' || err.errcode === 5) && i < tries - 1) {
+          const until = Date.now() + 300;
+          while (Date.now() < until) { /* brief spin before the next attempt */ }
+          continue;
+        }
+        throw err;
+      }
+    }
+  };
+  const run = sql => withRetry(() => db.exec(sql));
+  run("UPDATE records SET status = TRIM(status) WHERE status != TRIM(status)");
+  run("UPDATE records SET location = TRIM(location) WHERE location IS NOT NULL AND location != TRIM(location)");
   /* casing fix so "submitted" / "SUBMITTED" become the canonical value */
-  db.exec("UPDATE records SET status = 'Submitted' WHERE status != 'Submitted' AND UPPER(TRIM(status)) = 'SUBMITTED'");
+  run("UPDATE records SET status = 'Submitted' WHERE status != 'Submitted' AND UPPER(TRIM(status)) = 'SUBMITTED'");
   /* every remaining legacy value becomes For Submission */
-  db.exec("UPDATE records SET status = 'For Submission' WHERE status NOT IN ('For Submission', 'Submitted')");
+  run("UPDATE records SET status = 'For Submission' WHERE status NOT IN ('For Submission', 'Submitted')");
   /* location follows the status */
-  db.exec("UPDATE records SET location = 'Law Office' WHERE status = 'For Submission' AND (location IS NULL OR location != 'Law Office')");
-  db.exec("UPDATE records SET location = 'Main Office' WHERE status = 'Submitted' AND (location IS NULL OR location != 'Main Office')");
+  run("UPDATE records SET location = 'Law Office' WHERE status = 'For Submission' AND (location IS NULL OR location != 'Law Office')");
+  run("UPDATE records SET location = 'Main Office' WHERE status = 'Submitted' AND (location IS NULL OR location != 'Main Office')");
 })();
 
 function seed() {
