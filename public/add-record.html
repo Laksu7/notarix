@@ -173,8 +173,7 @@ function updatePreviewName() {
       <p style="font-size:12px;">${pendingFile ? 'Selected for upload' : 'Attached to this record'}</p>`;
   } else {
     c.innerHTML = `${ICONS.doc.replace('viewBox', 'width="34" height="34" viewBox')}
-      <b style="color:var(--ink);">No file selected</b>
-      <p style="font-size:12px;">Upload a copy of the notarized document to keep it with the record.</p>`;
+      <b style="color:var(--ink);">No file selected</b>`;
   }
 }
 updatePreviewName();
