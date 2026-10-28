@@ -18,9 +18,9 @@ app.use(session({
   cookie: { maxAge: 1000 * 60 * 60 * 8 } // 8 hours
 }));
 
-// Serve uploads + static files
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-app.use(express.static(path.join(__dirname, 'public')));
+// Serve uploads + static files (always re-validate so code changes show up after a plain refresh)
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), { setHeaders: res => res.setHeader('Cache-Control', 'no-cache') }));
+app.use(express.static(path.join(__dirname, 'public'), { setHeaders: res => res.setHeader('Cache-Control', 'no-cache') }));
 
 /* The office workflow has exactly two statuses; each one implies a location */
 const ALLOWED_STATUSES = ['For Submission', 'Submitted'];

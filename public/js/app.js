@@ -220,6 +220,7 @@ async function initShell() {
     <div class="side-bottom">
       <div class="nav-divider"></div>
       <button class="logout-btn" id="sideLogout">${ICONS.logout}Logout</button>
+      <span class="app-ver" title="NOTARIX build version">v2.0</span>
     </div>`;
 
   const menuBtnSvg = document.getElementById('menuBtn');
